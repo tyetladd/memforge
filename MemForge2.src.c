@@ -217,9 +217,9 @@ static EFI_FILE_PROTOCOL *g_logfile = NULL;
 static EFI_FILE_PROTOCOL *g_logroot = NULL;  /* kept open for report.json */
 static UINTN g_n_cores = 1, g_n_enabled = 1;
 
-/* Language: 0 = Russian (default), 1 = English. Toggled via L key in menu
+/* Language: 0 = Russian, 1 = English (default). Toggled via L key in menu
    OR overridden by [Meta] Language=ru/en in quantai.ini. */
-static int g_lang = 0;
+static int g_lang = 1;
 static inline CHAR16 *T(CHAR16 *ru, CHAR16 *en) { return g_lang ? en : ru; }
 
 /* Pass progress for header — visible to user so they don't think the tests
