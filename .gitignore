@@ -1,0 +1,60 @@
+# --- Build outputs ---
+MemForge2.efi
+MemForge2_DIAG.efi
+MemForge2.src.o
+*.o
+*.obj
+
+# --- Python build artifacts ---
+LogAnalyzerGUI.exe
+LogAnalyzerGUI_Linux.bin
+__pycache__/
+*.pyc
+build/
+build_tmp/
+dist/
+
+# --- USB / boot artifacts (deployment-side, not source) ---
+EFI/
+HashTool.efi
+PreLoader.efi
+QuantAI.efi
+NvVars
+
+# --- Test logs and qemu state ---
+memforge2.log
+qemu_run.log
+qemu_serial.log
+qemu_vars.fd
+gccout.txt
+build_err.txt
+build_out.txt
+__test_write.txt
+
+# --- Third-party installers (don't ship in source repo) ---
+msys2-installer.exe
+
+# --- AI/diagnostic working dirs ---
+AI_DIAGNOSTIC/
+tests/
+
+# --- Post-test analyzer (separate project, not part of this repo) ---
+LogAnalyzerGUI.py
+LogAnalyzerGUI.spec
+APPLY_PROFILE.bat
+APPLY_PROFILE.py
+APPLY_PROFILE.sh
+RUN_ANALYZER.bat
+RUN_ANALYZER.sh
+
+# --- Local tool / agent state ---
+.claude/
+.tmp/
+
+# --- Editor / OS junk ---
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
