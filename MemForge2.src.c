@@ -502,6 +502,11 @@ static void log_line(CHAR16 *s);
 /* Forward decl — recheck_fb_dimensions is defined near efi_main but called
    from the main menu loop ~50 lines above its definition. */
 static void recheck_fb_dimensions(void);
+/* Forward decls — AMD SMN thermal helpers defined in the SMBus section
+   (uses pci_read* helpers) but called from detect_cpu_features which
+   lives earlier in the file. */
+static void   amd_thermal_probe(void);
+static UINT32 amd_thermal_sample(void);
 
 /* Framebuffer pointer + pitch, cached on first text-draw call. NULL means
    firmware exposes BltOnly mode — we'll fall back to per-pixel Blt for AA. */
@@ -2982,11 +2987,72 @@ static volatile UINT32 g_hwp_fail_count = 0;
 static UINT32 g_max_freq_mhz_observed   = 0;
 static UINT32 g_dominant_throttle       = 0; /* THROT_* bitmap (last non-zero) */
 
+/* AMD CPPC2 (Collaborative Processor Performance Control v2) — Zen+ /
+   Family 17h equivalent of Intel HWP. Same goal: ask the CPU to run at
+   its highest P-state continuously instead of the firmware default base
+   ratio. Without this the AMD tester runs all kernels at ~70% of CPU
+   max and thermal stress is correspondingly weaker.
+
+   Detection: CPUID 0x80000008.EBX bit 27 = "AMD CPPC supported".
+     (Bit 27 historically — some sources document bit 12; bit 27 is the
+     definitive one per the AMD64 Programmer's Manual since Zen.)
+
+   MSRs:
+     0xC00102B0 MSR_AMD_CPPC_CAP1
+       bits [7:0]   Lowest Performance
+       bits [15:8]  Lowest Non-linear Performance
+       bits [23:16] Nominal Performance
+       bits [31:24] Highest Performance         ← what we want
+     0xC00102B1 MSR_AMD_CPPC_ENABLE             ← write bit 0 = 1 to enable
+     0xC00102B3 MSR_AMD_CPPC_REQ                ← per-logical-CPU request
+       bits [7:0]   Maximum Performance
+       bits [15:8]  Minimum Performance
+       bits [23:16] Desired Performance (0 = autonomous within min..max)
+       bits [31:24] Energy Performance Preference (0 = max perf, 0xFF = max powersave)
+   Returns the "highest" ratio (CAP1 bits [31:24]) or 0 if unsupported. */
+static UINT32 try_enable_cppc2_amd(void) {
+    UINT32 a, b, c, d;
+    cpuid(0x80000008, 0, &a, &b, &c, &d);
+    int has_cppc = (b >> 27) & 1;
+    if (!has_cppc) {
+        return 0;
+    }
+    /* Enable CPPC (write-once latched per Zen errata). */
+    UINT64 en = rdmsr_safe(0xC00102B1);
+    if (!(en & 1ULL)) {
+        wrmsr_safe(0xC00102B1, 1ULL);
+    }
+    /* Read capabilities — highest perf is bits [31:24] of CAP1. */
+    UINT64 cap1 = rdmsr_safe(0xC00102B0);
+    UINT32 highest = (UINT32)((cap1 >> 24) & 0xFFu);
+    if (highest == 0) {
+        /* Some early Zen returned 0 in CAP1 until BIOS programmed it.
+           Fall back to "request 0xFF" which the PSP clamps to actual max. */
+        highest = 0xFF;
+    }
+    /* AMD CPPC_REQ field order is REVERSED vs Intel HWP_REQUEST:
+         AMD: [7:0]=max  [15:8]=min  [23:16]=desired  [31:24]=EPP
+         Intel: opposite of first two. Be careful. */
+    UINT64 req = (UINT64)highest         /* max */
+               | ((UINT64)highest <<  8) /* min */
+               | (0ULL              << 16) /* desired = autonomous */
+               | (0x00ULL           << 24);/* EPP = 0 (max performance) */
+    wrmsr_safe(0xC00102B3, req);
+    /* Verify (PSP may clamp; we trust the value we sent). */
+    UINT64 verify = rdmsr_safe(0xC00102B3);
+    if ((verify & 0xFFFFFFFFu) == (req & 0xFFFFFFFFu)) {
+        __sync_fetch_and_add(&g_hwp_ok_count, 1);
+    } else {
+        __sync_fetch_and_add(&g_hwp_fail_count, 1);
+    }
+    return highest;
+}
+
 static UINT32 try_enable_max_perf(void) {
+    if (g_cpu_vendor == CPU_AMD) {
+        return try_enable_cppc2_amd();
+    }
     if (g_cpu_vendor != CPU_INTEL) {
-        /* AMD has its own P-state interface (CPPC/HWP-like via MSR 0xC00102B0+).
-           Out of scope for now — most ZenN UEFIs actually default to a
-           higher P-state than Intel in pre-OS anyway. */
         return 0;
     }
     UINT32 a, b, c, d;
@@ -3162,15 +3228,17 @@ static void detect_cpu_features(void) {
         UINT32 hp = try_enable_max_perf();
         CHAR16 lb[200];
         if (hp > 0) {
-            /* On Alder Lake the HWP "performance level" is not a 100 MHz
-               ratio — it's an abstract scale. 63 ≈ 4.9 GHz on a 12600KF
-               P-core, but the conversion factor varies per SKU. We log the
-               raw value so it's traceable, not a misleading "MHz". */
+            /* Both Intel HWP and AMD CPPC2 expose an abstract "performance
+               level" rather than a direct MHz value. We log raw so it's
+               traceable per platform. On Intel Alder Lake 63 ≈ 4.9 GHz
+               P-core. On AMD Zen 0xFF / 255 is the typical highest. */
             SPrint(lb, sizeof(lb),
-                   L"[PERF] BSP: HWP enabled, Highest_Perf level=%d", hp);
+                   L"[PERF] BSP: %s enabled, Highest_Perf level=%d",
+                   (g_cpu_vendor == CPU_AMD) ? L"CPPC2" : L"HWP", hp);
         } else {
             SPrint(lb, sizeof(lb),
-                   L"[PERF] BSP: HWP unavailable or locked; staying at firmware default");
+                   L"[PERF] BSP: %s unavailable or locked; staying at firmware default",
+                   (g_cpu_vendor == CPU_AMD) ? L"CPPC2" : L"HWP");
         }
         log_line(lb);
 
@@ -3242,7 +3310,13 @@ static void detect_cpu_features(void) {
     g_has_aperf_mperf = (c & 1) != 0;
     if (g_cpu_vendor == CPU_AMD) {
         g_has_thermal = 0;
-        log_line(L"[CPU] AMD: per-core temperature MSR unavailable, column will show '—'");
+        /* AMD lacks IA32_THERM_STATUS (0x19C) — Intel-only. We probe the
+           AMD SMN mailbox right after for Tctl access; if SMN responds,
+           g_has_thermal flips back to 1 and the temperature column gets
+           per-PACKAGE readings (not per-core like Intel) populated by
+           sample_aggregate_metrics. */
+        log_line(L"[CPU] AMD: IA32_THERM_STATUS unavailable, probing SMN for Tctl...");
+        amd_thermal_probe();
     } else {
         g_has_thermal = (a & 1) != 0;
     }
@@ -3557,6 +3631,86 @@ static UINT8 pci_read8(UINT8 bus, UINT8 dev, UINT8 func, UINT8 off) {
     return (UINT8)((v >> ((off & 3) * 8)) & 0xFF);
 }
 
+/* ---------- AMD SMN (System Management Network) thermal reader ----------
+   AMD Zen+ CPUs expose their Tctl (control temperature, the same value
+   shown by Ryzen Master / HWiNFO) via the System Management Network.
+   The SMN is reachable from the host CPU through a mailbox in the Data
+   Fabric device at PCI 00:00.0 (vendor 0x1022) using a non-standard
+   index/data pair in config space:
+     - PCI config offset 0x60: SMN target address (write 32-bit)
+     - PCI config offset 0x64: SMN data (read 32-bit)
+   For Zen / Zen+ / Zen2 / Zen3 / Zen4 the Tctl register is at SMN
+   address 0x00059800 ("F17M00H_THM_TCTL" in AMD PPR docs). The value
+   read is encoded as:
+     bits [31:21]  Tctl temperature in 0.125 °C units
+       (i.e. divide by 8 to get °C with quarter-degree precision)
+   We sample this periodically from sample_aggregate_metrics on AMD
+   systems where SMN responded with non-FF on probe.
+
+   Caveats:
+     - This is PER-PACKAGE (socket) temperature, not per-core like Intel
+       IA32_THERM_STATUS. We populate g_max_temp_c only — the per-core
+       column in the core panel still shows "—" on AMD.
+     - On dual-socket AMD systems we only see socket 0. UEFI apps don't
+       have a clean way to enumerate sockets without ACPI tables.
+     - Some Zen3+ chiplet designs add an offset ("Tctl offset", 27 °C
+       for Threadripper, etc.) which is what makes Ryzen Master show a
+       different value than HWiNFO. We use the raw Tctl. */
+static int    g_amd_smn_ready = 0;     /* probe result */
+static UINT8  g_amd_df_dev    = 0;     /* PCI device of the Data Fabric (0:00.0) */
+
+static UINT32 amd_smn_read(UINT32 smn_addr) {
+    /* Write target address to config offset 0x60, then read data from
+       0x64. Both go to PCI 0:DF:0 — we found DF dev during probe. */
+    UINT32 cfg_addr = 0x80000000u | ((UINT32)g_amd_df_dev << 11) | 0x60;
+    io_outl(0xCF8, cfg_addr);
+    io_outl(0xCFC, smn_addr);
+    cfg_addr = 0x80000000u | ((UINT32)g_amd_df_dev << 11) | 0x64;
+    io_outl(0xCF8, cfg_addr);
+    return io_inl(0xCFC);
+}
+
+static void amd_thermal_probe(void) {
+    if (g_cpu_vendor != CPU_AMD) return;
+    /* Find Data Fabric PCI device: vendor 0x1022 at bus 0. On Zen+ this
+       is typically at 0:18.x but the host bridge that holds the SMN
+       index/data window is at 0:00.0 with various device IDs. We just
+       scan for any 0x1022 device on bus 0 with class 0x06 (Host bridge)
+       and try SMN access to it. */
+    for (UINT8 dev = 0; dev < 32; dev++) {
+        UINT16 vid = pci_read16(0, dev, 0, 0x00);
+        if (vid != 0x1022) continue;
+        UINT8 cls = pci_read8(0, dev, 0, 0x0B);
+        if (cls != 0x06) continue;     /* not a host bridge */
+        g_amd_df_dev = dev;
+        /* Test SMN by reading 0x00059800 (Tctl). FFFFFFFF = no response. */
+        UINT32 v = amd_smn_read(0x00059800);
+        if (v == 0xFFFFFFFF || v == 0) continue;
+        UINT32 raw = v >> 21;          /* Tctl × 8 (per AMD PPR) */
+        UINT32 deg = raw / 8;
+        if (deg < 1 || deg > 150) continue;   /* sanity */
+        g_amd_smn_ready = 1;
+        g_has_thermal   = 1;            /* enable thermal display, AMD-aware */
+        g_tj_max        = 95;           /* typical Ryzen TjMax for ratio calc */
+        CHAR16 lb[160];
+        SPrint(lb, sizeof(lb),
+               L"[CPU] AMD SMN thermal: DF at 00:%02d.0, initial Tctl=%d°C — enabled",
+               (UINT32)dev, deg);
+        log_line(lb);
+        return;
+    }
+    log_line(L"[CPU] AMD SMN thermal: no Data Fabric found — temperature column stays '—'");
+}
+
+static UINT32 amd_thermal_sample(void) {
+    if (!g_amd_smn_ready) return 0;
+    UINT32 v = amd_smn_read(0x00059800);
+    UINT32 raw = v >> 21;
+    UINT32 deg = raw / 8;
+    if (deg > 150) deg = 0;
+    return deg;
+}
+
 /* ---------- Intel SMBus / SPD reader ----------
    Intel ICH/PCH SMBus host controller lives at PCI device class 0x0C0500
    (Serial Bus → SMBus). Across generations it has appeared at multiple
@@ -3588,42 +3742,73 @@ static UINT16 g_smbus_io_base = 0;    /* 0 = not found / not initialised */
 static int    g_smbus_present = 0;
 
 static int smbus_locate(void) {
-    /* Scan bus 0. The PCH SMBus typically lives at dev 31 func 4 on
-       modern parts and dev 31 func 3 on older ICH7..ICH10. Restricting
-       the scan to bus 0 keeps it fast (32 devs × 8 funcs = 256 probes). */
+    /* Scan bus 0. The PCH SMBus typically lives at dev 31 func 4 on modern
+       Intel parts, dev 31 func 3 on older ICH7..ICH10, and dev 20 func 0
+       on AMD FCH. Restricting the scan to bus 0 keeps it fast (32 devs ×
+       8 funcs = 256 probes).
+
+       Intel and AMD FCH both implement the PIIX4-compatible SMBus register
+       layout, so once we have the I/O base the rest of smbus_byte_read /
+       smbus_wait works on BOTH unchanged. The detection differs only in:
+         - PCI vendor ID (0x8086 Intel vs 0x1022 AMD)
+         - Where the I/O base lives in PCI config:
+             Intel: standard BAR4 (offset 0x20)
+             AMD:   non-standard offset 0x90 (SMBA I/O Base in FCH spec).
+                    If 0 there, fall back to fixed 0xB00 which is the AMD
+                    Bolton/Promontory default.
+    */
     for (UINT8 dev = 0; dev < 32; dev++) {
         UINT16 vid = pci_read16(0, dev, 0, 0x00);
-        if (vid == 0xFFFF) continue;          /* no device at this slot */
+        if (vid == 0xFFFF) continue;
         UINT8 hdr  = pci_read8(0, dev, 0, 0x0E);
         UINT8 nfunc = (hdr & 0x80) ? 8 : 1;
         for (UINT8 func = 0; func < nfunc; func++) {
             UINT16 fvid = pci_read16(0, dev, func, 0x00);
             if (fvid == 0xFFFF) continue;
-            /* Class code is at offsets 0x0B (class), 0x0A (subclass),
-               0x09 (programming interface). SMBus is class=0x0C
-               subclass=0x05 prog_if=0x00. */
+            /* Class 0x0C / Subclass 0x05 = Serial Bus → SMBus. */
             UINT8 cls = pci_read8(0, dev, func, 0x0B);
             UINT8 sub = pci_read8(0, dev, func, 0x0A);
             if (cls != 0x0C || sub != 0x05) continue;
-            /* Found a SMBus device. Only accept Intel for now (AMD FCH
-               SMBus uses a different register set we don't implement). */
-            if (fvid != 0x8086) continue;
-            UINT32 bar4 = pci_read32(0, dev, func, 0x20);
-            /* I/O BARs have bit 0 = 1; bits [15:1] hold the base. */
-            if (!(bar4 & 1)) continue;
-            g_smbus_io_base = (UINT16)(bar4 & 0xFFFE);
+
+            UINT16 base = 0;
+            const CHAR16 *vendor_name = L"?";
+            if (fvid == 0x8086) {
+                /* Intel: I/O base in BAR4 (offset 0x20), bit 0 = 1 marks
+                   it as an I/O BAR. */
+                UINT32 bar4 = pci_read32(0, dev, func, 0x20);
+                if (!(bar4 & 1)) continue;
+                base = (UINT16)(bar4 & 0xFFFE);
+                vendor_name = L"Intel";
+            } else if (fvid == 0x1022) {
+                /* AMD FCH: I/O base at non-standard PCI config offset 0x90
+                   (per AMD FCH SMBus spec). If firmware left it 0, fall
+                   back to the hard-coded 0xB00 default which all Zen-era
+                   FCHs ship with. */
+                UINT32 smba = pci_read32(0, dev, func, 0x90);
+                base = (UINT16)(smba & 0xFFE0);   /* mask off control bits */
+                if (base == 0) base = 0xB00;
+                vendor_name = L"AMD";
+            } else {
+                continue;   /* unknown SMBus vendor — skip */
+            }
+
+            g_smbus_io_base = base;
             g_smbus_present = 1;
-            /* Make sure I/O space is enabled in the Command register (bit 0).
-               Some firmwares leave it 0 after handing off to the OS bootloader. */
+
+            /* Make sure I/O space access is enabled in the Command
+               register. Some firmwares clear bit 0 after their own use. */
             UINT16 cmd = pci_read16(0, dev, func, 0x04);
             if (!(cmd & 0x0001)) {
-                /* We can't write PCI config back via inl alone; need outl on
-                   0xCFC. */
                 UINT32 addr = 0x80000000u | ((UINT32)dev << 11)
                             | ((UINT32)func << 8) | 0x04;
                 io_outl(0xCF8, addr);
                 io_outw(0xCFC, cmd | 0x0001);
             }
+            CHAR16 lb[120];
+            SPrint(lb, sizeof(lb),
+                   L"[SPD] SMBus host: %s vendor (PCI %02d:%02d.%d), I/O base 0x%X",
+                   vendor_name, 0, (UINT32)dev, (UINT32)func, (UINT32)base);
+            log_line(lb);
             return 1;
         }
     }
@@ -5511,6 +5696,14 @@ static void sample_aggregate_metrics(UINT64 now_ms) {
     g_cum_bytes = sum_bytes;
     g_freq_max_mhz = freq_max;
     g_freq_avg_mhz = freq_cnt ? (freq_sum / freq_cnt) : 0;
+    /* On AMD, per-core IA32_THERM_STATUS doesn't exist so g_args[i].temp_c
+       stays 0. Instead we sample the package Tctl via SMN here. The value
+       gets fed into the same g_max_temp_c counter that the Intel path
+       writes, so the header / summary display works uniformly. */
+    if (g_amd_smn_ready) {
+        UINT32 pkg_temp = amd_thermal_sample();
+        if (pkg_temp > temp_max) temp_max = pkg_temp;
+    }
     /* RUNNING peak — never decrease. Previously we did
          g_max_temp_c = temp_max;
        which OVERWROTE the sample's max instead of accumulating across
