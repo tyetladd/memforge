@@ -3174,42 +3174,59 @@ static void detect_cpu_features(void) {
         }
         log_line(lb);
 
-        /* Dump configured turbo ratios — tells us what the silicon CAN do. */
-        UINT64 trl = rdmsr_safe(0x1AD);    /* MSR_TURBO_RATIO_LIMIT */
-        UINT32 r1 = (UINT32)((trl >>  0) & 0xFFu);
-        UINT32 r2 = (UINT32)((trl >>  8) & 0xFFu);
-        UINT32 r4 = (UINT32)((trl >> 24) & 0xFFu);
-        UINT32 r8 = (UINT32)((trl >> 56) & 0xFFu);
-        SPrint(lb, sizeof(lb),
-               L"[PERF] Turbo ratios from 0x1AD: 1c=%d 2c=%d 4c=%d 8c=%d (×100 MHz)",
-               r1, r2, r4, r8);
-        log_line(lb);
+        /* INTEL-ONLY diagnostic block. MSR 0x1AD (TURBO_RATIO_LIMIT) and
+           MSR 0x610 (PKG_POWER_LIMIT) are Intel-specific — on AMD reading
+           a non-existent MSR triggers a #GP fault. UEFI has no OS-level
+           exception handler, so the CPU just freezes / reboots. This was
+           a regression that bricked the tester on every AMD platform:
+           visible in logs as program ending right after the BSP HWP line,
+           before reaching the menu. */
+        if (g_cpu_vendor == CPU_INTEL) {
+            /* Dump configured turbo ratios — tells us what the silicon CAN do. */
+            UINT64 trl = rdmsr_safe(0x1AD);    /* MSR_TURBO_RATIO_LIMIT */
+            UINT32 r1 = (UINT32)((trl >>  0) & 0xFFu);
+            UINT32 r2 = (UINT32)((trl >>  8) & 0xFFu);
+            UINT32 r4 = (UINT32)((trl >> 24) & 0xFFu);
+            UINT32 r8 = (UINT32)((trl >> 56) & 0xFFu);
+            SPrint(lb, sizeof(lb),
+                   L"[PERF] Turbo ratios from 0x1AD: 1c=%d 2c=%d 4c=%d 8c=%d (×100 MHz)",
+                   r1, r2, r4, r8);
+            log_line(lb);
 
-        /* Dump PKG_POWER_LIMIT (0x610). Critical: this tells us if BIOS set
-           a low PL1 that will throttle us. */
-        UINT64 plr = rdmsr_safe(0x610);
-        UINT32 pl1_w = (UINT32)((plr >> 3) & 0xFFFu);
-        UINT32 pl2_w = (UINT32)((plr >> 35) & 0xFFFu);
-        int locked = (plr & (1ULL << 63)) ? 1 : 0;
-        SPrint(lb, sizeof(lb),
-               L"[PERF] BIOS PL1=%dW (en=%d) PL2=%dW (en=%d) lock=%d",
-               pl1_w, (int)((plr >> 15) & 1),
-               pl2_w, (int)((plr >> 47) & 1), locked);
-        log_line(lb);
+            /* Dump PKG_POWER_LIMIT (0x610). Critical: this tells us if BIOS
+               set a low PL1 that will throttle us. */
+            UINT64 plr = rdmsr_safe(0x610);
+            UINT32 pl1_w = (UINT32)((plr >> 3) & 0xFFFu);
+            UINT32 pl2_w = (UINT32)((plr >> 35) & 0xFFFu);
+            int locked = (plr & (1ULL << 63)) ? 1 : 0;
+            SPrint(lb, sizeof(lb),
+                   L"[PERF] BIOS PL1=%dW (en=%d) PL2=%dW (en=%d) lock=%d",
+                   pl1_w, (int)((plr >> 15) & 1),
+                   pl2_w, (int)((plr >> 47) & 1), locked);
+            log_line(lb);
 
-        /* Try to lift PL1/PL2 to 250 W so power-limit throttling can't
-           silently cap our stress run. If BIOS locked it, the write fails
-           and we report it — at least the user knows to disable
-           "CPU Lock Configuration" in BIOS. */
-        UINT64 old_pl = 0, new_pl = 0;
-        int pl_ok = try_lift_power_limits(&old_pl, &new_pl);
-        UINT32 new_pl1 = (UINT32)((new_pl >> 3) & 0xFFFu);
-        UINT32 new_pl2 = (UINT32)((new_pl >> 35) & 0xFFFu);
-        SPrint(lb, sizeof(lb),
-               L"[PERF] Power limit lift: %a (new PL1=%dW PL2=%dW)",
-               pl_ok ? "OK" : "FAILED (BIOS locked)",
-               new_pl1, new_pl2);
-        log_line(lb);
+            /* Try to lift PL1/PL2 to 250 W so power-limit throttling can't
+               silently cap our stress run. If BIOS locked it, the write
+               fails and we report it — at least the user knows to disable
+               "CPU Lock Configuration" in BIOS. */
+            UINT64 old_pl = 0, new_pl = 0;
+            int pl_ok = try_lift_power_limits(&old_pl, &new_pl);
+            UINT32 new_pl1 = (UINT32)((new_pl >> 3) & 0xFFFu);
+            UINT32 new_pl2 = (UINT32)((new_pl >> 35) & 0xFFFu);
+            SPrint(lb, sizeof(lb),
+                   L"[PERF] Power limit lift: %a (new PL1=%dW PL2=%dW)",
+                   pl_ok ? "OK" : "FAILED (BIOS locked)",
+                   new_pl1, new_pl2);
+            log_line(lb);
+        } else {
+            /* AMD path — these MSR addresses are different on AMD (CPPC2
+               at 0xC00102B0..B3, PKG_POWER at 0xC0010299..029B). HWP-lift
+               equivalent isn't yet implemented for AMD; CPU stays at the
+               firmware default P-state. RAPL still works because that
+               vendor-aware detection happens later via detect_rapl(). */
+            log_line(L"[PERF] AMD platform: turbo/PL diagnostic skipped "
+                     L"(Intel-MSR-only). CPU runs at firmware default.");
+        }
     }
 
     /* APERF/MPERF availability — CPUID.06H:ECX.0 = "Hardware Coordination
