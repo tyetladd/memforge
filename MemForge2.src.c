@@ -762,6 +762,32 @@ static void say_at_rc(UINTN col, UINTN row, CHAR16 *s) {
     gfx_draw_str_color(col * g_char_w, row * g_char_h, s, COL_FG);
 }
 
+/* Init splash — rendered on screen BEFORE the main menu is built. Shown
+   between init steps that may stall for several seconds on restrictive
+   firmware (HP Sure Start blocks SMBus probes, slow USB I/O during
+   logging on some boards). Before this, the user just saw the dark
+   firmware boot screen with no indication that MemForge was even alive
+   — common reaction was "it froze, pull the USB". Splash is single-color,
+   centered, fast to draw — does not depend on the main menu layout
+   (which requires SMBIOS to be parsed first). */
+static void init_splash(CHAR16 *stage) {
+    if (!g_gop) return;
+    cls();
+    UINTN cy = g_h / 2;
+    /* Title — large centered line. */
+    CHAR16 *title = L"MEMFORGE v0.4";
+    UINTN tx = (g_w - StrLen(title) * g_char_w) / 2;
+    gfx_draw_str_color(tx, cy - g_char_h * 2, title, COL_ACCENT_HI);
+    /* Stage indicator — what we're doing right now. */
+    UINTN sx = (g_w - StrLen(stage) * g_char_w) / 2;
+    gfx_draw_str_color(sx, cy, stage, COL_FG);
+    /* Hint — only shown in init splash, not in menu. */
+    CHAR16 *hint = (g_lang ? L"Please wait, initializing..."
+                           : L"Подождите, идёт инициализация...");
+    UINTN hx = (g_w - StrLen(hint) * g_char_w) / 2;
+    gfx_draw_str_color(hx, cy + g_char_h * 2, hint, COL_DIM);
+}
+
 static void say_at_px(UINTN px, UINTN py, CHAR16 *s) {
     gfx_draw_str_color(px, py, s, COL_FG);
 }
@@ -795,7 +821,21 @@ static void log_line(CHAR16 *s) {
     buf[i++] = '\n';
     UINTN len = i;
     uefi_call_wrapper(g_logfile->Write, 3, g_logfile, &len, buf);
-    /* Flush right away so the file survives any later freeze/crash. */
+    /* No per-line Flush. On HP business systems and a few cheap USB sticks
+       the FAT driver synchronous-writes the dirty cluster + FAT entry on
+       every Flush, which turns 100 log lines into seconds of stalled
+       USB I/O during init. We pay for explicit Flush at the end of init
+       and after every completed test run instead — see flush_log_now()
+       calls scattered through the test driver. The cost of skipping the
+       per-line flush is that if the program hard-crashes mid-init, the
+       last 1-2 lines may be lost. Worth it for the 10× faster init. */
+}
+
+/* Caller-driven flush. Call at checkpoints (end of init, after each test,
+   before user-input wait) so users see fresh log content if they yank
+   the USB. */
+static void flush_log_now(void) {
+    if (!g_logfile) return;
     uefi_call_wrapper(g_logfile->Flush, 1, g_logfile);
 }
 
@@ -3819,9 +3859,12 @@ static int smbus_locate(void) {
    HST_STS value; caller checks for INTR (success) vs DEV_ERR/BUS_ERR. */
 static UINT8 smbus_wait(void) {
     UINT16 base = g_smbus_io_base;
-    /* Poll up to ~100 ms (timeout for a single byte SPD read should be <1ms;
-       100 ms is paranoid). UEFI BS->Stall gives us microsecond sleeps. */
-    for (int spin = 0; spin < 10000; spin++) {
+    /* Poll up to ~10 ms. A real byte read completes in <1 ms; the 10-ms
+       cap matters only for NACK detection on blocked SMBus (HP Sure Start,
+       TPM-locked DIMMs etc.) where the controller never reports BUSY=0.
+       Previously 100 ms ×8 addresses ×384 bytes/probe was making HP boots
+       look frozen — pure 30+ second SPD wait. Real systems answer fast. */
+    for (int spin = 0; spin < 1000; spin++) {
         UINT8 s = io_inb(base + 0x00);
         if (!(s & 0x01))  return s;       /* HOST_BUSY cleared → done */
         uefi_call_wrapper(BS->Stall, 1, (UINTN)10);  /* 10 µs */
@@ -7575,6 +7618,12 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
 
     log_line(L"=== MemForge2 v0.4 init ===");
     log_line(L"[WATCHDOG] UEFI 5-min watchdog disabled at app entry");
+    /* Show splash IMMEDIATELY so the user sees the program is alive while
+       INI parsing, SMBus probes and SMBIOS walk happen. Without this, the
+       firmware boot logo just hangs there for several seconds on slow PCs
+       (HP Sure Start can add 5-15 s) and users yank the USB thinking
+       it never started. */
+    init_splash(L"Init...");
     parse_quantai_ini();
     /* Honor MaxCores from INI: clamp g_n_enabled before tests reset state. */
     if (g_cfg_max_cores > 0 && g_cfg_max_cores < g_n_enabled) {
@@ -7621,6 +7670,8 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
         }
     }
     log_line(L"[STEP 1] Detecting CPU features + SMBIOS...");
+    init_splash(g_lang ? L"Detecting CPU features..."
+                       : L"Анализ CPU...");
     detect_cpu_features();
     /* INI EnableAVX=0 overrides MSR detection (in case user wants to force-skip). */
     if (!g_cfg_enable_avx) {
@@ -7635,11 +7686,15 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
                g_tsc_freq_hz, g_tsc_freq_hz / 1000000);
         log_line(lb);
     }
+    init_splash(g_lang ? L"Reading SMBIOS..." : L"Чтение SMBIOS...");
     parse_smbios();
     /* After SMBIOS we know how many DIMMs there are. Now go direct to each
        DIMM's SPD EEPROM via SMBus to pull info SMBIOS doesn't expose:
        serial number, manufacturing date, JEDEC manufacturer ID, primary
-       timings. Non-fatal if it fails (older Intel, AMD, DDR5 I3C-only). */
+       timings. Non-fatal if it fails (older Intel, AMD, DDR5 I3C-only).
+       Often the SLOWEST init step on HP business systems: Sure Start
+       blocks SMBus probes and each address NACK has to time out. */
+    init_splash(g_lang ? L"Reading DIMM SPDs..." : L"Чтение SPD планок...");
     spd_populate_dimms();
     /* Once total RAM is known: scale buffer-chunk size for big-RAM systems
        so the pass count stays reasonable. Skipped if user pinned BufferMB
@@ -7709,6 +7764,8 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
             log_line(fb);
         }
     }
+    init_splash(g_lang ? L"Allocating test buffer..."
+                       : L"Резервирование тестового буфера...");
     log_line(L"[STEP 2] cls()");
     cls();
     log_line(L"[STEP 3] Allocating test buffer (75% of largest free block, max 1 GB)...");
@@ -7751,8 +7808,12 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
         }
         drain_conin();
 
-        /* Main menu — wait for user input before starting tests. */
+        /* Main menu — wait for user input before starting tests. Flush
+           the log here so if the user pulls the USB at the menu (common
+           if they think the test is taking too long) everything written
+           so far is safely on disk. */
         log_line(L"[STEP 4a] Main menu (waiting for user)");
+        flush_log_now();
         if (!main_menu_wait()) {
             log_line(L"User chose reboot from menu");
             reboot_requested = 1;
@@ -7983,6 +8044,11 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
             SPrint(lb, sizeof(lb), L"[STEP 5.%d.C] run_test_mc returned errors=%ld",
                    (UINT32)i, r.errors);
             log_line(lb);
+            /* Flush after each test completes — user might yank USB at any
+               point during a 45-minute Full run, and we want the in-progress
+               per-test results to survive that. Cheap (1× per test, not
+               1× per log line). */
+            flush_log_now();
             g_summary[i] = r;
             /* Bump cumulative error counter shown in the live header. */
             g_run_total_errors += r.errors;
