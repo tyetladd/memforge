@@ -95,7 +95,12 @@ typedef struct {
     UINT8  spd_addr;           /* SMBus 7-bit address 0x50..0x57 used to read */
     UINT8  spd_size_class;     /* DDR3=3, DDR4=4, DDR5=5, 0 if unknown */
     UINT8  spd_tCL;            /* Primary CAS latency from DDR4 SPD byte 23-24 / DDR5 byte 32 */
-    UINT8  spd_reserved[3];
+    /* Chip organization, parsed from SPD. Lets us map a stuck-bit position
+       on the 64-bit data bus back to a SPECIFIC chip on the DIMM PCB. */
+    UINT8  spd_device_width;   /* SDRAM x-width (4, 8, 16) — chip data lanes */
+    UINT8  spd_bus_width;      /* Total module bus width (64 normal, 72 ECC) */
+    UINT8  spd_ranks;          /* Number of ranks (1, 2, 4) */
+    UINT8  spd_reserved[0];
 } dimm_info_t;
 
 /* Type 20 (Memory Device Mapped Address) entries: addr-range → DIMM handle.
@@ -1467,6 +1472,75 @@ static int single_bit_pos(UINT64 mask) {
     int pos = 0;
     while (((mask >> pos) & 1ULL) == 0) pos++;
     return pos;
+}
+
+/* Map a bit position (0..63 on the 64-bit data bus) back to a specific
+   chip on the DIMM PCB, using SPD device_width. Writes "U%d bit %d" or
+   "?" into `out`. Returns 1 if mapping was possible, 0 if SPD didn't
+   give us organization info. The "U%d" convention follows the silkscreen
+   designation on most DIMM PCBs (U1, U2, ..., U8 left-to-right).
+
+   For a typical x8 DDR4 module (8 chips × 8 bits = 64-bit bus):
+     bit 0..7   → chip U1 (some boards use U0)
+     bit 8..15  → chip U2
+     ...
+     bit 56..63 → chip U8
+
+   For a x4 module (16 chips × 4 bits):
+     bit 0..3   → U1, bit 4..7 → U2, etc.
+
+   For x16 (4 chips × 16 bits) — rare on consumer DDR4 but common on
+   LPDDR mobile:
+     bit 0..15  → chip U1, bit 16..31 → U2, etc.
+*/
+static int chip_label_for_bit(UINT32 dimm_idx_0based, int bit_pos,
+                               CHAR16 *out, UINTN out_chars) {
+    out[0] = 0;
+    if (dimm_idx_0based >= g_dimm_count) return 0;
+    if (bit_pos < 0 || bit_pos > 63) return 0;
+    dimm_info_t *d = &g_dimms[dimm_idx_0based];
+    UINT8 dw = d->spd_device_width;
+    if (dw != 4 && dw != 8 && dw != 16) {
+        /* SPD didn't tell us organization (most likely on HP Sure Start
+           or DDR5 where we couldn't read the full block). Show bit only. */
+        SPrint(out, out_chars * sizeof(CHAR16), L"bit %d (chip ?)", bit_pos);
+        return 0;
+    }
+    /* Chip index 1-based: matches PCB silkscreen designation. */
+    UINT32 chip_idx = (UINT32)bit_pos / dw + 1;
+    UINT32 within  = (UINT32)bit_pos % dw;
+    SPrint(out, out_chars * sizeof(CHAR16),
+           L"chip U%d bit %d (x%d)", chip_idx, within, dw);
+    return 1;
+}
+
+/* Find which DIMM index (0-based) MOST of the recorded errors belong
+   to. Walks g_err_records[], looks up dimm via dimm_label_for_addr but
+   we don't have the index back. Easier: re-derive from address via
+   g_dimm_map[]. Returns -1 if not determinable. */
+static int dominant_dimm_idx(void) {
+    UINT32 shown = g_err_count > MAX_ERR_RECORDS ? MAX_ERR_RECORDS : g_err_count;
+    if (shown == 0 || g_dimm_count == 0 || g_dimm_map_count == 0) return -1;
+    UINT32 counts[MAX_DIMMS] = {0};
+    for (UINT32 i = 0; i < shown; i++) {
+        UINT64 addr = g_err_records[i].phys_addr;
+        for (UINT32 m = 0; m < g_dimm_map_count; m++) {
+            if (addr >= g_dimm_map[m].start && addr <= g_dimm_map[m].end) {
+                for (UINT32 j = 0; j < g_dimm_count; j++) {
+                    if (g_dimms[j].handle == g_dimm_map[m].dev_handle) {
+                        if (j < MAX_DIMMS) counts[j]++;
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+    }
+    int best = -1; UINT32 best_n = 0;
+    for (UINT32 j = 0; j < g_dimm_count; j++) {
+        if (counts[j] > best_n) { best_n = counts[j]; best = (int)j; }
+    }
+    return best;
 }
 
 /* Build a 1-GB-bucketed histogram of error addresses. Writes up to
@@ -4087,6 +4161,32 @@ static void spd_parse_into_dimm(UINT8 *buf, UINTN n_bytes, dimm_info_t *d) {
     else if (dram_type == 0x0B) d->spd_size_class = 3;  /* DDR3 */
     else                         d->spd_size_class = 0;
 
+    /* Chip organization — bytes 12 (Module Organization) and 13 (Memory
+       Bus Width). Same byte indices on DDR3, DDR4, DDR5.
+         Byte 12:
+           bits [4:3] = Number of Package Ranks (00=1, 01=2, 10=3, 11=4)
+           bits [2:0] = SDRAM Device Width: 000=x4, 001=x8, 010=x16, 011=x32
+         Byte 13:
+           bits [4:3] = Bus Width Extension (00=none, 01=+8b for ECC)
+           bits [2:0] = Primary Bus Width: 000=8, 001=16, 010=32, 011=64
+       From these we derive chips_per_rank = bus_width / device_width,
+       used to map a stuck-bit position back to a specific chip on the
+       PCB (chip_index = bit_pos / device_width). */
+    if (n_bytes >= 14) {
+        UINT8 b12 = buf[12];
+        UINT8 b13 = buf[13];
+        UINT8 dw_code  = b12 & 0x07;
+        UINT8 rk_code  = (b12 >> 3) & 0x07;
+        UINT8 bw_code  = b13 & 0x07;
+        UINT8 ext_code = (b13 >> 3) & 0x03;
+        /* Translate codes to numeric. Out-of-range → leave as 0
+           (= "unknown", per-chip mapping then falls back to bit-only). */
+        if (dw_code <= 3) d->spd_device_width = (UINT8)(4 << dw_code);
+        if (rk_code <= 3) d->spd_ranks        = (UINT8)(rk_code + 1);
+        if (bw_code <= 3) d->spd_bus_width    = (UINT8)(8 << bw_code);
+        if (ext_code == 1 && d->spd_bus_width > 0) d->spd_bus_width += 8;  /* ECC */
+    }
+
     /* DDR4 manufacturer block — bytes 320..328 (we read up to 384). */
     if (d->spd_size_class == 4 && n_bytes >= 329) {
         d->spd_jedec_bank = buf[320];
@@ -6163,12 +6263,26 @@ static void render_summary(UINT64 total_ms) {
         UINT64 stuck_x = find_stuck_bit(&stuck_n);
         if (stuck_n >= 5 && stuck_x != 0) {
             int bp = single_bit_pos(stuck_x);
-            CHAR16 sb[200];
+            CHAR16 sb[260];
             if (bp >= 0) {
-                SPrint(sb, sizeof(sb),
-                       T(L"⚠ Застрял бит D[%d]: %d ошибок с XOR=0x%016lx",
-                         L"⚠ Stuck bit D[%d]: %d errors with XOR=0x%016lx"),
-                       bp, stuck_n, stuck_x);
+                /* Translate bit position into physical chip on the
+                   suspected DIMM. This gives shop tech an actionable
+                   answer: 'replace this specific chip / DIMM by RMA'. */
+                int didx = dominant_dimm_idx();
+                CHAR16 chip[64] = L"";
+                if (didx >= 0)
+                    chip_label_for_bit((UINT32)didx, bp, chip, 64);
+                if (didx >= 0 && chip[0]) {
+                    SPrint(sb, sizeof(sb),
+                           T(L"⚠ Застрял бит D[%d] → DIMM%d %s: %d ошибок",
+                             L"⚠ Stuck bit D[%d] → DIMM%d %s: %d errors"),
+                           bp, didx + 1, chip, stuck_n);
+                } else {
+                    SPrint(sb, sizeof(sb),
+                           T(L"⚠ Застрял бит D[%d]: %d ошибок с XOR=0x%016lx",
+                             L"⚠ Stuck bit D[%d]: %d errors with XOR=0x%016lx"),
+                           bp, stuck_n, stuck_x);
+                }
             } else {
                 SPrint(sb, sizeof(sb),
                        T(L"⚠ Повторяющийся паттерн ошибки: %d × XOR=0x%016lx (мульти-бит)",
@@ -8293,14 +8407,25 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
             UINT64 stuck_x = find_stuck_bit(&stuck_n);
             if (stuck_n >= 5 && stuck_x != 0) {
                 int bp = single_bit_pos(stuck_x);
-                if (bp >= 0)
-                    SPrint(lb, sizeof(lb),
-                           L"[ERR] STUCK BIT D[%d]: %d occurrences (XOR=0x%016lx)",
-                           bp, stuck_n, stuck_x);
-                else
+                if (bp >= 0) {
+                    /* Map to physical chip if SPD told us organization. */
+                    int didx = dominant_dimm_idx();
+                    CHAR16 chip[64] = L"";
+                    if (didx >= 0)
+                        chip_label_for_bit((UINT32)didx, bp, chip, 64);
+                    if (didx >= 0 && chip[0])
+                        SPrint(lb, sizeof(lb),
+                               L"[ERR] STUCK BIT D[%d] -> DIMM%d %s: %d occurrences (XOR=0x%016lx)",
+                               bp, didx + 1, chip, stuck_n, stuck_x);
+                    else
+                        SPrint(lb, sizeof(lb),
+                               L"[ERR] STUCK BIT D[%d]: %d occurrences (XOR=0x%016lx)",
+                               bp, stuck_n, stuck_x);
+                } else {
                     SPrint(lb, sizeof(lb),
                            L"[ERR] Repeating pattern: %d × XOR=0x%016lx (multi-bit)",
                            stuck_n, stuck_x);
+                }
                 log_line(lb);
             }
             UINT32 hb[32], hc[32];
