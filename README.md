@@ -8,13 +8,15 @@ offline review.
 
 ![Memory failure detected — DDR3 stuck-bit + damaged bank, pinpointed to Samsung DIMM1](docs/screenshot-failure.jpg)
 
-*Real run on a returned-to-shop HP EliteDesk 8300: 396 errors in 54 seconds,
-pinpointed to **DIMM1, chip U3 bit 4 stuck** plus a damaged bank-group 3 /
-bank 5. SPD readout identified the part as Samsung M378B5773CH0-CK0 for
-warranty replacement. The simple verdict screen (shown above) is the
-default after every run; press **[D]** for the technical breakdown — full
-14-test table, per-error address/DIMM/DRAM-coord records, MCA bank diff,
-SPD timings, and BW degradation trend.*
+*Real run on a refurbished HP EliteDesk 8300 build: 396 errors in 54 seconds,
+pinpointed to **DIMM1**, with stuck-bit and damaged-bank patterns visible.
+SPD readout identified the part as Samsung M378B5773CH0-CK0 for warranty
+replacement. (Per-chip mapping in this screenshot pre-dates a DDR3 SPD-offset
+fix — see commit history; current builds give the correct chip U-number for
+DDR3 modules.) The simple verdict screen (shown above) is the default after
+every run; press **[D]** for the technical breakdown — full 14-test table,
+per-error address/DIMM/DRAM-coord records, MCA bank diff, SPD timings, and
+BW degradation trend.*
 
 ## What it actually does
 
@@ -175,7 +177,7 @@ EnableAVX=1
 ;MarathonHours=0    ; 0 = off, 1..24 = run for N hours
 
 [Meta]
-Version=4.6
+Version=0.4
 Language=en         ; "ru" or "en"
 
 [Display]
@@ -190,9 +192,18 @@ The `[AI]` section that may appear in your local `quantai.ini` is consumed
 by an external post-test analyzer (not part of this repo) and is ignored by
 the tester itself.
 
+## How this was built
+
+This project is a collaboration: code written by Claude (Anthropic LLM)
+under direction from a PC-assembly tech who provides the domain expertise,
+use cases, and real-hardware validation. The repository owner is not a
+systems programmer; Claude handles C, UEFI APIs, MSRs, SMBus protocol.
+See the article on Habr for the longer story.
+
 ## License
 
-See `LICENSE`.
+MIT — see [`LICENSE`](LICENSE). Permits commercial use, modification,
+distribution, and private use; provided as-is, no warranty.
 
 ## Acknowledgements
 
