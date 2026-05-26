@@ -839,7 +839,7 @@ static void init_splash(CHAR16 *stage) {
     cls();
     UINTN cy = g_h / 2;
     /* Title — large centered line. */
-    CHAR16 *title = L"MEMFORGE v0.4.14";
+    CHAR16 *title = L"MEMFORGE v0.4.15";
     UINTN tx = (g_w - StrLen(title) * g_char_w) / 2;
     gfx_draw_str_color(tx, cy - g_char_h * 2, title, COL_ACCENT_HI);
     /* Stage indicator — what we're doing right now. */
@@ -1182,9 +1182,9 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
     UINTN cols = g_text_cols;
     if (cols >= 110) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.14   |   %ld.%ld ГБ RAM   |   %s   "
+               T(L"  MEMFORGE v0.4.15   |   %ld.%ld ГБ RAM   |   %s   "
                  L"|   %s   |   %02d:%02d   |   ост ~%02d:%02d   |   Тесты %d/%d",
-                 L"  MEMFORGE v0.4.14   |   %ld.%ld GB RAM   |   %s   "
+                 L"  MEMFORGE v0.4.15   |   %ld.%ld GB RAM   |   %s   "
                  L"|   %s   |   %02d:%02d   |   ETA ~%02d:%02d   |   Tests %d/%d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
@@ -1194,8 +1194,8 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
                (UINT32)done, (UINT32)total);
     } else if (cols >= 90) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.14   |   %ld.%ld ГБ RAM   |   %s   |   %s   |   %02d:%02d   |   ост ~%02d:%02d",
-                 L"  MEMFORGE v0.4.14   |   %ld.%ld GB RAM   |   %s   |   %s   |   %02d:%02d   |   ETA ~%02d:%02d"),
+               T(L"  MEMFORGE v0.4.15   |   %ld.%ld ГБ RAM   |   %s   |   %s   |   %02d:%02d   |   ост ~%02d:%02d",
+                 L"  MEMFORGE v0.4.15   |   %ld.%ld GB RAM   |   %s   |   %s   |   %02d:%02d   |   ETA ~%02d:%02d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
                err_tag,
@@ -1203,16 +1203,16 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
                eta_secs / 60, eta_secs % 60);
     } else if (cols >= 70) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.14  |  %ld.%ld ГБ RAM  |  %s  |  %s  |  %02d:%02d",
-                 L"  MEMFORGE v0.4.14  |  %ld.%ld GB RAM  |  %s  |  %s  |  %02d:%02d"),
+               T(L"  MEMFORGE v0.4.15  |  %ld.%ld ГБ RAM  |  %s  |  %s  |  %02d:%02d",
+                 L"  MEMFORGE v0.4.15  |  %ld.%ld GB RAM  |  %s  |  %s  |  %02d:%02d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
                err_tag,
                secs / 60, secs % 60);
     } else {
         SPrint(buf, sizeof(buf),
-               T(L" MEMFORGE v0.4.14 | %s | %s | %02d:%02d",
-                 L" MEMFORGE v0.4.14 | %s | %s | %02d:%02d"),
+               T(L" MEMFORGE v0.4.15 | %s | %s | %02d:%02d",
+                 L" MEMFORGE v0.4.15 | %s | %s | %02d:%02d"),
                pass_tag,
                err_tag,
                secs / 60, secs % 60);
@@ -4668,12 +4668,27 @@ static void amd_thermal_probe(void) {
 }
 
 static UINT32 amd_thermal_sample(void) {
+    /* v0.4.15 — correct decode per Linux k10temp / FreeBSD amdtemp.c:
+       SMN 0x59800 (SMU_THM_TCON_CUR_TMP)
+         bits [31:21]  raw temperature value (11 bits, mask 0x7FF)
+         bit  19       TempRangeSel — when SET, scale is -49°C..+206°C
+                       (subtract 49°C from the raw decode); when CLEAR
+                       scale is 0..225°C (no offset).
+       temp_c = (raw * 0.125) - (range_sel ? 49 : 0)
+
+       Pre-v0.4.15 code was missing both the 0x7FF mask AND the bit-19
+       range adjustment, which inflated readings by ~49°C on Ryzen SKUs
+       that report on the -49..206 scale (most Renoir/Cezanne/Zen3+
+       desktop parts). Field report on Ryzen 5 4500 showed Tctl=93°C at
+       idle / 123°C under AVX2 — real temps were 44°C / 74°C, matching
+       HWiNFO and confirming the bit-19 path was active. */
     if (!g_amd_smn_ready) return 0;
     UINT32 v = amd_smn_read(0x00059800);
-    UINT32 raw = v >> 21;
-    UINT32 deg = raw / 8;
-    if (deg > 150) deg = 0;
-    return deg;
+    UINT32 raw = (v >> 21) & 0x7FF;
+    INT32  deg = (INT32)(raw / 8);          /* raw * 0.125 °C */
+    if (v & (1u << 19)) deg -= 49;          /* range adjust */
+    if (deg < 0 || deg > 150) return 0;     /* sanity clamp */
+    return (UINT32)deg;
 }
 
 /* ---------- Intel SMBus / SPD reader ----------
@@ -7788,8 +7803,8 @@ static void render_summary(UINT64 total_ms) {
     UINTN hrow = (g_hdr_h / 2 - g_char_h / 2) / g_char_h;
     CHAR16 buf[200];
     SPrint(buf, sizeof(buf),
-           T(L"  MEMFORGE v0.4.14 ИТОГИ   |   %d сек   |   Ядра %d/%d",
-             L"  MEMFORGE v0.4.14 SUMMARY   |   %d sec   |   Cores %d/%d"),
+           T(L"  MEMFORGE v0.4.15 ИТОГИ   |   %d сек   |   Ядра %d/%d",
+             L"  MEMFORGE v0.4.15 SUMMARY   |   %d sec   |   Cores %d/%d"),
            (UINT32)(total_ms / 1000),
            (UINT32)g_n_enabled, (UINT32)g_n_cores);
     say_at_rc(0, hrow, buf);
@@ -9563,7 +9578,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
         }
     }
 
-    log_line(L"=== MemForge2 v0.4.14 init ===");
+    log_line(L"=== MemForge2 v0.4.15 init ===");
     log_line(L"[WATCHDOG] UEFI 5-min watchdog disabled at app entry");
     /* Show splash IMMEDIATELY so the user sees the program is alive while
        INI parsing, SMBus probes and SMBIOS walk happen. Without this, the
