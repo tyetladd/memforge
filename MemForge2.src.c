@@ -827,7 +827,7 @@ static void init_splash(CHAR16 *stage) {
     cls();
     UINTN cy = g_h / 2;
     /* Title — large centered line. */
-    CHAR16 *title = L"MEMFORGE v0.4.4";
+    CHAR16 *title = L"MEMFORGE v0.4.5";
     UINTN tx = (g_w - StrLen(title) * g_char_w) / 2;
     gfx_draw_str_color(tx, cy - g_char_h * 2, title, COL_ACCENT_HI);
     /* Stage indicator — what we're doing right now. */
@@ -1170,9 +1170,9 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
     UINTN cols = g_text_cols;
     if (cols >= 110) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.4   |   %ld.%ld ГБ RAM   |   %s   "
+               T(L"  MEMFORGE v0.4.5   |   %ld.%ld ГБ RAM   |   %s   "
                  L"|   %s   |   %02d:%02d   |   ост ~%02d:%02d   |   Тесты %d/%d",
-                 L"  MEMFORGE v0.4.4   |   %ld.%ld GB RAM   |   %s   "
+                 L"  MEMFORGE v0.4.5   |   %ld.%ld GB RAM   |   %s   "
                  L"|   %s   |   %02d:%02d   |   ETA ~%02d:%02d   |   Tests %d/%d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
@@ -1182,8 +1182,8 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
                (UINT32)done, (UINT32)total);
     } else if (cols >= 90) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.4   |   %ld.%ld ГБ RAM   |   %s   |   %s   |   %02d:%02d   |   ост ~%02d:%02d",
-                 L"  MEMFORGE v0.4.4   |   %ld.%ld GB RAM   |   %s   |   %s   |   %02d:%02d   |   ETA ~%02d:%02d"),
+               T(L"  MEMFORGE v0.4.5   |   %ld.%ld ГБ RAM   |   %s   |   %s   |   %02d:%02d   |   ост ~%02d:%02d",
+                 L"  MEMFORGE v0.4.5   |   %ld.%ld GB RAM   |   %s   |   %s   |   %02d:%02d   |   ETA ~%02d:%02d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
                err_tag,
@@ -1191,16 +1191,16 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
                eta_secs / 60, eta_secs % 60);
     } else if (cols >= 70) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.4  |  %ld.%ld ГБ RAM  |  %s  |  %s  |  %02d:%02d",
-                 L"  MEMFORGE v0.4.4  |  %ld.%ld GB RAM  |  %s  |  %s  |  %02d:%02d"),
+               T(L"  MEMFORGE v0.4.5  |  %ld.%ld ГБ RAM  |  %s  |  %s  |  %02d:%02d",
+                 L"  MEMFORGE v0.4.5  |  %ld.%ld GB RAM  |  %s  |  %s  |  %02d:%02d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
                err_tag,
                secs / 60, secs % 60);
     } else {
         SPrint(buf, sizeof(buf),
-               T(L" MEMFORGE v0.4.4 | %s | %s | %02d:%02d",
-                 L" MEMFORGE v0.4.4 | %s | %s | %02d:%02d"),
+               T(L" MEMFORGE v0.4.5 | %s | %s | %02d:%02d",
+                 L" MEMFORGE v0.4.5 | %s | %s | %02d:%02d"),
                pass_tag,
                err_tag,
                secs / 60, secs % 60);
@@ -2743,6 +2743,14 @@ static void run_avx2_sustained(ap_arg_t *a) {
     if (!g_has_avx2) {
         a->errors = 0; a->bytes = 0; a->progress = 1000;
         return;
+    }
+    /* Diagnostic: BSP-only checkpoint to distinguish "entered AVX2 kernel
+       and hung inside" from "never entered AVX2 kernel". Field-reported
+       AMD hang traced this far in v0.4.4 — next log will show whether
+       this line appears (thermal halt during burst) or doesn't (some
+       earlier fault we missed). */
+    if (a->core_idx == 0 && g_cur_test_idx == 0) {
+        log_line(L"[KERNEL] AVX2 Sustained: entering burst loop");
     }
     UINT64 e = 0;
     UINTN n = a->n_qwords;
@@ -7604,8 +7612,8 @@ static void render_summary(UINT64 total_ms) {
     UINTN hrow = (g_hdr_h / 2 - g_char_h / 2) / g_char_h;
     CHAR16 buf[200];
     SPrint(buf, sizeof(buf),
-           T(L"  MEMFORGE v0.4.4 ИТОГИ   |   %d сек   |   Ядра %d/%d",
-             L"  MEMFORGE v0.4.4 SUMMARY   |   %d sec   |   Cores %d/%d"),
+           T(L"  MEMFORGE v0.4.5 ИТОГИ   |   %d сек   |   Ядра %d/%d",
+             L"  MEMFORGE v0.4.5 SUMMARY   |   %d sec   |   Cores %d/%d"),
            (UINT32)(total_ms / 1000),
            (UINT32)g_n_enabled, (UINT32)g_n_cores);
     say_at_rc(0, hrow, buf);
@@ -9379,7 +9387,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
         }
     }
 
-    log_line(L"=== MemForge2 v0.4.4 init ===");
+    log_line(L"=== MemForge2 v0.4.5 init ===");
     log_line(L"[WATCHDOG] UEFI 5-min watchdog disabled at app entry");
     /* Show splash IMMEDIATELY so the user sees the program is alive while
        INI parsing, SMBus probes and SMBIOS walk happen. Without this, the
@@ -9484,6 +9492,36 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
        (single-bit ECC corrections, marginal cells, etc.). */
     mca_detect();
     if (g_has_mca) mca_snapshot(g_mca_baseline);
+
+    /* Sanity check on baseline CPU temperature. If we're already at 80+°C
+       BEFORE any test work, a 12-core AVX2 burst will instantly push past
+       Tjmax and either trip the firmware power management cleanly (most
+       systems) or thermal-halt without warning (buggy ASUS/AMI AMD UEFI).
+       Loud warning in the log so the user sees the cause if a later test
+       hangs without explanation. Field-reported AMD hang (Ryzen 5 4500 on
+       ASUS B-series) traced to exactly this — Tctl=93°C at idle. */
+    {
+        UINT32 t0 = 0;
+        if (g_cpu_vendor == CPU_AMD && g_has_thermal) {
+            t0 = amd_thermal_sample();
+        }
+        /* Intel per-core temp is sampled later inside the kernels, not at
+           init. So this warning currently only fires on AMD where SMN
+           gives us a synchronous reading. */
+        if (t0 >= 80) {
+            CHAR16 lb[260];
+            SPrint(lb, sizeof(lb),
+                   L"[TEMP] ⚠ Baseline CPU temperature is %d°C at IDLE — "
+                   L"this is very hot. Sustained AVX2 stress on all cores "
+                   L"may trigger thermal halt or firmware power-trip on "
+                   L"some boards (especially ASUS B-series AMD AMI UEFI). "
+                   L"If tests hang on AVX2 Sustained / Thermal Soak, set "
+                   L"EnableAVX=0 or MaxCores=1 in quantai.ini to bypass.",
+                   t0);
+            log_line(lb);
+        }
+    }
+
     /* Read the previous run record from NVRAM (cold/warm-boot delta).
        Logs "[HIST] Previous run #N: ..." if found; silent on first run. */
     hist_load();
