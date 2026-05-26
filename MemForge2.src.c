@@ -5364,12 +5364,30 @@ static int ini_strieq(const CHAR8 *a, const char *b) {
 
 static void parse_quantai_ini(void) {
     if (!g_logroot) return;
+    /* Try a few common name variants. UEFI FAT is usually case-insensitive
+       but a handful of firmwares aren't, and users do save the file with
+       different casing depending on their editor / file manager. */
     EFI_FILE_PROTOCOL *f = NULL;
-    EFI_STATUS s = uefi_call_wrapper(g_logroot->Open, 5, g_logroot, &f,
-                       L"quantai.ini", EFI_FILE_MODE_READ, 0);
+    EFI_STATUS s = EFI_NOT_FOUND;
+    static CHAR16 *names[] = {
+        L"quantai.ini", L"QUANTAI.INI", L"Quantai.ini", L"QuantAI.ini"
+    };
+    CHAR16 *found_as = NULL;
+    for (UINTN i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        s = uefi_call_wrapper(g_logroot->Open, 5, g_logroot, &f,
+                              names[i], EFI_FILE_MODE_READ, 0);
+        if (s == EFI_SUCCESS && f) { found_as = names[i]; break; }
+    }
     if (EFI_ERROR(s) || !f) {
-        log_line(L"[INI] quantai.ini not found — using defaults");
+        log_line(L"[INI] quantai.ini not found in volume root — "
+                 L"check that file is at USB root, not in a subfolder. "
+                 L"Using defaults.");
         return;
+    }
+    {
+        CHAR16 lb[120];
+        SPrint(lb, sizeof(lb), L"[INI] opened as '%s'", found_as);
+        log_line(lb);
     }
     /* Read up to 4 KB — way more than enough for our subset. */
     CHAR8 buf[4096];
@@ -5380,9 +5398,43 @@ static void parse_quantai_ini(void) {
     }
     uefi_call_wrapper(f->Close, 1, f);
     buf[sz] = 0;
+    {
+        CHAR16 lb[80];
+        SPrint(lb, sizeof(lb), L"[INI] read %d bytes", (UINT32)sz);
+        log_line(lb);
+    }
+
+    /* === BOM detection ===
+       Windows Notepad saves files with a UTF-8 BOM (EF BB BF) by default.
+       Some editors save UTF-16 (FF FE) or UTF-16BE (FE FF). Our parser is
+       CHAR8 (ASCII/single-byte); these byte sequences at the start would
+       break the first section header parse, silently dropping ALL config.
+       Skip UTF-8 BOM transparently; refuse UTF-16 with an explicit error
+       so the user knows what went wrong instead of "config silently
+       ignored". */
+    CHAR8 *bom_start = buf;
+    UINTN bom_sz = sz;
+    if (sz >= 3 && (UINT8)buf[0] == 0xEF && (UINT8)buf[1] == 0xBB
+                && (UINT8)buf[2] == 0xBF) {
+        bom_start = buf + 3;
+        bom_sz    = sz - 3;
+        log_line(L"[INI] UTF-8 BOM detected at start of file — skipped "
+                 L"(save as ANSI / UTF-8 without BOM to avoid this notice)");
+    } else if (sz >= 2 && (UINT8)buf[0] == 0xFF && (UINT8)buf[1] == 0xFE) {
+        log_line(L"[INI] ⚠ UTF-16 LE encoding detected — UNSUPPORTED. "
+                 L"Re-save quantai.ini as plain ANSI or UTF-8 (without BOM). "
+                 L"Config NOT applied, falling back to defaults.");
+        return;
+    } else if (sz >= 2 && (UINT8)buf[0] == 0xFE && (UINT8)buf[1] == 0xFF) {
+        log_line(L"[INI] ⚠ UTF-16 BE encoding detected — UNSUPPORTED. "
+                 L"Re-save quantai.ini as plain ANSI or UTF-8 (without BOM). "
+                 L"Config NOT applied, falling back to defaults.");
+        return;
+    }
 
     CHAR8 section[32] = {0};
-    CHAR8 *line = buf;
+    CHAR8 *line = bom_start;
+    (void)bom_sz;
     while (line < buf + sz) {
         CHAR8 *eol = line;
         while (eol < buf + sz && *eol != '\n' && *eol != '\r') eol++;
