@@ -396,6 +396,15 @@ static int    g_cfg_bitfade_explicit = 0;  /* user set BitFadeSeconds in INI? */
 static UINT32 g_cfg_passes        = 0;     /* 0 = auto (cover all addressable RAM) */
 static UINT32 g_cfg_max_cores     = 0;     /* 0 = use all enabled */
 static int    g_cfg_enable_avx    = 1;     /* override the AVX2 test */
+/* Auto-skip flag for heavy parallel-burst kernels (AVX2 Sustained, Thermal
+   Soak, BW Soak, VRM Square-Wave). Set to 1 by the init thermal-guard
+   when baseline CPU temperature exceeds the safe threshold — on hot
+   systems with weak cooling or buggy power-management firmware these
+   kernels reliably halt the system. Pattern tests (March-C-, TRRespass,
+   etc.) still run because they don't burn 12 cores at AVX2 burst.
+   Override with IgnoreThermalGuard=1 in quantai.ini. */
+static int    g_thermal_guard_skip_heavy = 0;
+static int    g_cfg_ignore_thermal_guard = 0;
 static int    g_cfg_multipass     = 1;     /* if 1, rotate buffer across regions */
 static int    g_cfg_force_blt     = 0;     /* if 1, never use direct framebuffer */
 static int    g_cfg_enable_aa      = 0;     /* if 1, enable AA + direct-fb path */
@@ -827,7 +836,7 @@ static void init_splash(CHAR16 *stage) {
     cls();
     UINTN cy = g_h / 2;
     /* Title — large centered line. */
-    CHAR16 *title = L"MEMFORGE v0.4.5";
+    CHAR16 *title = L"MEMFORGE v0.4.6";
     UINTN tx = (g_w - StrLen(title) * g_char_w) / 2;
     gfx_draw_str_color(tx, cy - g_char_h * 2, title, COL_ACCENT_HI);
     /* Stage indicator — what we're doing right now. */
@@ -1170,9 +1179,9 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
     UINTN cols = g_text_cols;
     if (cols >= 110) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.5   |   %ld.%ld ГБ RAM   |   %s   "
+               T(L"  MEMFORGE v0.4.6   |   %ld.%ld ГБ RAM   |   %s   "
                  L"|   %s   |   %02d:%02d   |   ост ~%02d:%02d   |   Тесты %d/%d",
-                 L"  MEMFORGE v0.4.5   |   %ld.%ld GB RAM   |   %s   "
+                 L"  MEMFORGE v0.4.6   |   %ld.%ld GB RAM   |   %s   "
                  L"|   %s   |   %02d:%02d   |   ETA ~%02d:%02d   |   Tests %d/%d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
@@ -1182,8 +1191,8 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
                (UINT32)done, (UINT32)total);
     } else if (cols >= 90) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.5   |   %ld.%ld ГБ RAM   |   %s   |   %s   |   %02d:%02d   |   ост ~%02d:%02d",
-                 L"  MEMFORGE v0.4.5   |   %ld.%ld GB RAM   |   %s   |   %s   |   %02d:%02d   |   ETA ~%02d:%02d"),
+               T(L"  MEMFORGE v0.4.6   |   %ld.%ld ГБ RAM   |   %s   |   %s   |   %02d:%02d   |   ост ~%02d:%02d",
+                 L"  MEMFORGE v0.4.6   |   %ld.%ld GB RAM   |   %s   |   %s   |   %02d:%02d   |   ETA ~%02d:%02d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
                err_tag,
@@ -1191,16 +1200,16 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
                eta_secs / 60, eta_secs % 60);
     } else if (cols >= 70) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.5  |  %ld.%ld ГБ RAM  |  %s  |  %s  |  %02d:%02d",
-                 L"  MEMFORGE v0.4.5  |  %ld.%ld GB RAM  |  %s  |  %s  |  %02d:%02d"),
+               T(L"  MEMFORGE v0.4.6  |  %ld.%ld ГБ RAM  |  %s  |  %s  |  %02d:%02d",
+                 L"  MEMFORGE v0.4.6  |  %ld.%ld GB RAM  |  %s  |  %s  |  %02d:%02d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
                err_tag,
                secs / 60, secs % 60);
     } else {
         SPrint(buf, sizeof(buf),
-               T(L" MEMFORGE v0.4.5 | %s | %s | %02d:%02d",
-                 L" MEMFORGE v0.4.5 | %s | %s | %02d:%02d"),
+               T(L" MEMFORGE v0.4.6 | %s | %s | %02d:%02d",
+                 L" MEMFORGE v0.4.6 | %s | %s | %02d:%02d"),
                pass_tag,
                err_tag,
                secs / 60, secs % 60);
@@ -3502,13 +3511,34 @@ static int try_enable_avx_state(void) {
     int has_avx2  = (b >> 5)  & 1;
     if (!has_xsave || !has_avx || !has_avx2) return 0;
 
-    /* Set CR4.OSXSAVE (bit 18) to allow XSETBV. */
+    /* Full Intel SDM Vol.1 §13.5.4 / OSDev "AVX crash on EFI App [SOLVED]"
+       prescribed sequence. Earlier we only set CR4.OSXSAVE + XSETBV which
+       worked on most firmware because they had the other bits already set.
+       Field-reported AMD Ryzen 5 4500 + ASUS B-series hang traced to
+       run_avx2_sustained executing the first AVX2 instruction and
+       triggering #UD because CR0.EM was still set / CR4.OSFXSR was clear
+       on this firmware. Setting all required bits defensively is harmless
+       on firmware that already had them. */
+
+    /* CR0: clear EM (no x87 emulation), set MP (monitor coprocessor). */
+    UINT64 cr0;
+    __asm__ __volatile__("mov %%cr0, %0" : "=r"(cr0));
+    cr0 &= ~(1ULL << 2);    /* EM = 0 */
+    cr0 |=  (1ULL << 1);    /* MP = 1 */
+    __asm__ __volatile__("mov %0, %%cr0" : : "r"(cr0));
+
+    /* CR4:
+         bit 9  OSFXSR    — OS supports FXSAVE/FXRSTOR (required for SSE)
+         bit 10 OSXMMEXCPT — OS supports SIMD float-point exceptions
+         bit 18 OSXSAVE   — OS supports XSAVE (required for AVX state save). */
     UINT64 cr4;
     __asm__ __volatile__("mov %%cr4, %0" : "=r"(cr4));
+    cr4 |= (1ULL << 9);
+    cr4 |= (1ULL << 10);
     cr4 |= (1ULL << 18);
     __asm__ __volatile__("mov %0, %%cr4" : : "r"(cr4));
 
-    /* Set XCR0 to enable save-state for x87 (bit0) + SSE/XMM (bit1) + AVX/YMM (bit2). */
+    /* XCR0: enable save-state for x87 (bit0) + SSE/XMM (bit1) + AVX/YMM (bit2). */
     UINT32 lo = 0x7;
     UINT32 hi = 0;
     __asm__ __volatile__("xsetbv" : : "a"(lo), "d"(hi), "c"(0));
@@ -7612,8 +7642,8 @@ static void render_summary(UINT64 total_ms) {
     UINTN hrow = (g_hdr_h / 2 - g_char_h / 2) / g_char_h;
     CHAR16 buf[200];
     SPrint(buf, sizeof(buf),
-           T(L"  MEMFORGE v0.4.5 ИТОГИ   |   %d сек   |   Ядра %d/%d",
-             L"  MEMFORGE v0.4.5 SUMMARY   |   %d sec   |   Cores %d/%d"),
+           T(L"  MEMFORGE v0.4.6 ИТОГИ   |   %d сек   |   Ядра %d/%d",
+             L"  MEMFORGE v0.4.6 SUMMARY   |   %d sec   |   Cores %d/%d"),
            (UINT32)(total_ms / 1000),
            (UINT32)g_n_enabled, (UINT32)g_n_cores);
     say_at_rc(0, hrow, buf);
@@ -9387,7 +9417,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
         }
     }
 
-    log_line(L"=== MemForge2 v0.4.5 init ===");
+    log_line(L"=== MemForge2 v0.4.6 init ===");
     log_line(L"[WATCHDOG] UEFI 5-min watchdog disabled at app entry");
     /* Show splash IMMEDIATELY so the user sees the program is alive while
        INI parsing, SMBus probes and SMBIOS walk happen. Without this, the
