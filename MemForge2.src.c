@@ -836,7 +836,7 @@ static void init_splash(CHAR16 *stage) {
     cls();
     UINTN cy = g_h / 2;
     /* Title — large centered line. */
-    CHAR16 *title = L"MEMFORGE v0.4.6";
+    CHAR16 *title = L"MEMFORGE v0.4.7";
     UINTN tx = (g_w - StrLen(title) * g_char_w) / 2;
     gfx_draw_str_color(tx, cy - g_char_h * 2, title, COL_ACCENT_HI);
     /* Stage indicator — what we're doing right now. */
@@ -1179,9 +1179,9 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
     UINTN cols = g_text_cols;
     if (cols >= 110) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.6   |   %ld.%ld ГБ RAM   |   %s   "
+               T(L"  MEMFORGE v0.4.7   |   %ld.%ld ГБ RAM   |   %s   "
                  L"|   %s   |   %02d:%02d   |   ост ~%02d:%02d   |   Тесты %d/%d",
-                 L"  MEMFORGE v0.4.6   |   %ld.%ld GB RAM   |   %s   "
+                 L"  MEMFORGE v0.4.7   |   %ld.%ld GB RAM   |   %s   "
                  L"|   %s   |   %02d:%02d   |   ETA ~%02d:%02d   |   Tests %d/%d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
@@ -1191,8 +1191,8 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
                (UINT32)done, (UINT32)total);
     } else if (cols >= 90) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.6   |   %ld.%ld ГБ RAM   |   %s   |   %s   |   %02d:%02d   |   ост ~%02d:%02d",
-                 L"  MEMFORGE v0.4.6   |   %ld.%ld GB RAM   |   %s   |   %s   |   %02d:%02d   |   ETA ~%02d:%02d"),
+               T(L"  MEMFORGE v0.4.7   |   %ld.%ld ГБ RAM   |   %s   |   %s   |   %02d:%02d   |   ост ~%02d:%02d",
+                 L"  MEMFORGE v0.4.7   |   %ld.%ld GB RAM   |   %s   |   %s   |   %02d:%02d   |   ETA ~%02d:%02d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
                err_tag,
@@ -1200,16 +1200,16 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
                eta_secs / 60, eta_secs % 60);
     } else if (cols >= 70) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.6  |  %ld.%ld ГБ RAM  |  %s  |  %s  |  %02d:%02d",
-                 L"  MEMFORGE v0.4.6  |  %ld.%ld GB RAM  |  %s  |  %s  |  %02d:%02d"),
+               T(L"  MEMFORGE v0.4.7  |  %ld.%ld ГБ RAM  |  %s  |  %s  |  %02d:%02d",
+                 L"  MEMFORGE v0.4.7  |  %ld.%ld GB RAM  |  %s  |  %s  |  %02d:%02d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
                err_tag,
                secs / 60, secs % 60);
     } else {
         SPrint(buf, sizeof(buf),
-               T(L" MEMFORGE v0.4.6 | %s | %s | %02d:%02d",
-                 L" MEMFORGE v0.4.6 | %s | %s | %02d:%02d"),
+               T(L" MEMFORGE v0.4.7 | %s | %s | %02d:%02d",
+                 L" MEMFORGE v0.4.7 | %s | %s | %02d:%02d"),
                pass_tag,
                err_tag,
                secs / 60, secs % 60);
@@ -5620,6 +5620,15 @@ static void parse_quantai_ini(void) {
                 if (v > 24) v = 24;
                 g_cfg_marathon_hours = v;
             }
+            else if (ini_strieq(key, "IgnoreThermalGuard") && ini_parse_uint(val, &v)) {
+                /* When set to 1, bypass the auto-skip of heavy parallel-burst
+                   kernels when baseline CPU temperature exceeds 85°C. Use
+                   only if you know your cooling is fine and the high reading
+                   is a sensor offset issue, OR if you specifically want to
+                   stress-test thermal headroom. Default off — safer for
+                   shop intake where unattended runs shouldn't halt the box. */
+                g_cfg_ignore_thermal_guard = (int)v;
+            }
         } else if (ini_strieq(section, "Display")) {
             UINT32 v;
             /* Workaround switch for firmware where direct framebuffer writes
@@ -5986,6 +5995,43 @@ static void EFIAPI ap_entry(VOID *arg) {
        to the log (FAT FS not multi-thread-safe, and we'd hammer it 11x
        per call on a 12-core box). BSP is core_idx==0 by convention. */
     int diag = (a->core_idx == 0 && g_cur_test_idx == 0);
+
+    /* Thermal guard: if init detected hot CPU at idle, skip heavy
+       parallel-burst kernels that have caused field-reported halts on
+       buggy AMD AMI firmware. Pattern tests still run because they
+       don't burn all cores at AVX2 power. Skip is silent on APs; BSP
+       logs once per skipped test (visible in the per-test summary). */
+    if (g_thermal_guard_skip_heavy) {
+        switch (a->kernel) {
+            case KER_AVX2:
+            case KER_AVX2_SUSTAINED:
+            case KER_VRM_SQUARE:
+            case KER_THERMAL_SOAK:
+            case KER_BW_SOAK:
+                if (a->core_idx == 0) {
+                    /* Note: g_tests[] is defined after ap_entry in the source,
+                       so we can't reference its name string here without a
+                       forward declaration. Kernel ID is enough to identify
+                       the skipped test — the per-test summary line later
+                       in the test loop will print the name. */
+                    CHAR16 lb[180];
+                    SPrint(lb, sizeof(lb),
+                           L"[TEMP] skipping heavy-burst kernel id=%d "
+                           L"(test idx=%d) — thermal guard active "
+                           L"(baseline CPU was too hot at start)",
+                           (UINT32)a->kernel, (UINT32)g_cur_test_idx);
+                    log_line(lb);
+                }
+                a->errors = 0;
+                a->bytes = 0;
+                a->progress = 1000;
+                a->done = 1;
+                return;
+            default:
+                break;
+        }
+    }
+
     if (diag) log_line(L"[BSP] ap_entry: pre try_enable_avx_state");
 
     /* CR4 and XCR0 are per-core registers. The BSP enabled OSXSAVE for
@@ -7642,8 +7688,8 @@ static void render_summary(UINT64 total_ms) {
     UINTN hrow = (g_hdr_h / 2 - g_char_h / 2) / g_char_h;
     CHAR16 buf[200];
     SPrint(buf, sizeof(buf),
-           T(L"  MEMFORGE v0.4.6 ИТОГИ   |   %d сек   |   Ядра %d/%d",
-             L"  MEMFORGE v0.4.6 SUMMARY   |   %d sec   |   Cores %d/%d"),
+           T(L"  MEMFORGE v0.4.7 ИТОГИ   |   %d сек   |   Ядра %d/%d",
+             L"  MEMFORGE v0.4.7 SUMMARY   |   %d sec   |   Cores %d/%d"),
            (UINT32)(total_ms / 1000),
            (UINT32)g_n_enabled, (UINT32)g_n_cores);
     say_at_rc(0, hrow, buf);
@@ -9417,7 +9463,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
         }
     }
 
-    log_line(L"=== MemForge2 v0.4.6 init ===");
+    log_line(L"=== MemForge2 v0.4.7 init ===");
     log_line(L"[WATCHDOG] UEFI 5-min watchdog disabled at app entry");
     /* Show splash IMMEDIATELY so the user sees the program is alive while
        INI parsing, SMBus probes and SMBIOS walk happen. Without this, the
@@ -9523,31 +9569,57 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
     mca_detect();
     if (g_has_mca) mca_snapshot(g_mca_baseline);
 
-    /* Sanity check on baseline CPU temperature. If we're already at 80+°C
+    /* Baseline CPU temperature thermal guard. If we're already at 85+°C
        BEFORE any test work, a 12-core AVX2 burst will instantly push past
        Tjmax and either trip the firmware power management cleanly (most
        systems) or thermal-halt without warning (buggy ASUS/AMI AMD UEFI).
-       Loud warning in the log so the user sees the cause if a later test
-       hangs without explanation. Field-reported AMD hang (Ryzen 5 4500 on
-       ASUS B-series) traced to exactly this — Tctl=93°C at idle. */
+       Field-reported AMD hang (Ryzen 5 4500 on ASUS B-series) traced to
+       exactly this — Tctl=93°C at idle. v0.4.6 verified the entry path
+       into the AVX2 kernel completes (CR0/CR4 fix worked), confirming
+       the hang is INSIDE the AVX2 burst — pure thermal halt with no
+       chance to log anything past the first FMA instruction.
+
+       Behaviour:
+         - <85°C   normal, all tests run
+         - >=85°C  set g_thermal_guard_skip_heavy = 1. ap_entry checks
+                   this flag and skips KER_AVX2{,_SUSTAINED}, KER_VRM_SQUARE,
+                   KER_THERMAL_SOAK, KER_BW_SOAK. Pattern tests still run
+                   (March-C-, TRRespass, Cache-Eviction, etc.) — those
+                   don't burn all cores at AVX2 power level.
+         - IgnoreThermalGuard=1 in INI bypasses the auto-skip.
+
+       Intel per-core temp is sampled inside kernels, not at init, so the
+       guard currently only triggers on AMD where SMN gives us a
+       synchronous baseline reading. Intel would need IA32_THERM_STATUS
+       per-core via a dedicated sampler at init — TODO if Intel users
+       hit the same class of issue. */
     {
         UINT32 t0 = 0;
         if (g_cpu_vendor == CPU_AMD && g_has_thermal) {
             t0 = amd_thermal_sample();
         }
-        /* Intel per-core temp is sampled later inside the kernels, not at
-           init. So this warning currently only fires on AMD where SMN
-           gives us a synchronous reading. */
-        if (t0 >= 80) {
+        if (t0 >= 85 && !g_cfg_ignore_thermal_guard) {
+            g_thermal_guard_skip_heavy = 1;
             CHAR16 lb[260];
             SPrint(lb, sizeof(lb),
                    L"[TEMP] ⚠ Baseline CPU temperature is %d°C at IDLE — "
-                   L"this is very hot. Sustained AVX2 stress on all cores "
-                   L"may trigger thermal halt or firmware power-trip on "
-                   L"some boards (especially ASUS B-series AMD AMI UEFI). "
-                   L"If tests hang on AVX2 Sustained / Thermal Soak, set "
-                   L"EnableAVX=0 or MaxCores=1 in quantai.ini to bypass.",
+                   L"AUTO-SKIPPING heavy parallel-burst kernels (AVX2*, "
+                   L"VRM Square-Wave, Thermal Soak, BW Soak) to avoid "
+                   L"thermal halt. Pattern tests still run. Override with "
+                   L"IgnoreThermalGuard=1 in quantai.ini or fix the cooling.",
                    t0);
+            log_line(lb);
+        } else if (t0 >= 75) {
+            CHAR16 lb[200];
+            SPrint(lb, sizeof(lb),
+                   L"[TEMP] Baseline CPU temperature %d°C at IDLE — higher "
+                   L"than typical. Tests will proceed but watch for throttling.",
+                   t0);
+            log_line(lb);
+        } else if (t0 > 0) {
+            CHAR16 lb[120];
+            SPrint(lb, sizeof(lb),
+                   L"[TEMP] Baseline CPU temperature %d°C — OK", t0);
             log_line(lb);
         }
     }
