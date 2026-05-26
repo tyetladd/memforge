@@ -989,11 +989,24 @@ static void compute_layout(UINTN n_tests) {
     g_card_cols = 1;
     if (g_h < 700) {
         g_card_cols = 2;
+    } else if (n_tests >= 13 && g_h < 1600) {
+        /* Hard rule: ≥13 tests basically never fit 1-col on anything below
+           4K. Probe below would say 1-col is OK on 1440p with a 21-px margin,
+           but real rendering adds 30-50 px not visible to the probe (the
+           "Overall progress" label above the bar, separator strips inside
+           panels, rounding). Field report from a 14-test build on 1440p:
+           [N/14] label overlapped CPU row, "MB/s" column truncated, footer
+           off-screen. Forcing 2-col closes that gap cleanly. */
+        g_card_cols = 2;
     } else {
         /* Probe: with 1-col cards, would the layout overflow?
            Reserve estimates: header + cards + cores panel + overall + footer.
            Same formulas used below for the real layout — we just check the
-           sum here BEFORE picking g_card_cols. */
+           sum here BEFORE picking g_card_cols.
+           +SAFETY_MARGIN accounts for items NOT in this estimate: the
+           "Overall progress [N/M]" label row (g_char_h), panel separator
+           strips, and integer rounding accumulating across 4-5 layout
+           sections. */
         UINTN cards_h_1col   = g_card_row_h * n_tests + g_pad;
         UINTN core_title_h_e = g_compact ? 0 : g_char_h;
         UINTN core_rh_e      = g_compact ? (g_char_h + 1) : (g_char_h + 4);
@@ -1006,8 +1019,10 @@ static void compute_layout(UINTN n_tests) {
         UINTN footer_h_e     = g_compact ? 36 : (g_h / 14);
         if (footer_h_e < (UINTN)(g_compact ? 36 : 50))
             footer_h_e = g_compact ? 36 : 50;
+        UINTN safety_margin  = 4 * g_char_h;  /* ~112 px on 1× font */
         UINTN need = g_card_y + cards_h_1col + g_pad + core_h_e
-                   + g_pad + overall_h_e + g_pad + footer_h_e;
+                   + g_pad + overall_h_e + g_pad + footer_h_e
+                   + safety_margin;
         if (need > g_h) {
             g_card_cols = 2;
         }
