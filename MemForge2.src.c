@@ -827,7 +827,7 @@ static void init_splash(CHAR16 *stage) {
     cls();
     UINTN cy = g_h / 2;
     /* Title — large centered line. */
-    CHAR16 *title = L"MEMFORGE v0.4.2";
+    CHAR16 *title = L"MEMFORGE v0.4.3";
     UINTN tx = (g_w - StrLen(title) * g_char_w) / 2;
     gfx_draw_str_color(tx, cy - g_char_h * 2, title, COL_ACCENT_HI);
     /* Stage indicator — what we're doing right now. */
@@ -1170,9 +1170,9 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
     UINTN cols = g_text_cols;
     if (cols >= 110) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.2   |   %ld.%ld ГБ RAM   |   %s   "
+               T(L"  MEMFORGE v0.4.3   |   %ld.%ld ГБ RAM   |   %s   "
                  L"|   %s   |   %02d:%02d   |   ост ~%02d:%02d   |   Тесты %d/%d",
-                 L"  MEMFORGE v0.4.2   |   %ld.%ld GB RAM   |   %s   "
+                 L"  MEMFORGE v0.4.3   |   %ld.%ld GB RAM   |   %s   "
                  L"|   %s   |   %02d:%02d   |   ETA ~%02d:%02d   |   Tests %d/%d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
@@ -1182,8 +1182,8 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
                (UINT32)done, (UINT32)total);
     } else if (cols >= 90) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.2   |   %ld.%ld ГБ RAM   |   %s   |   %s   |   %02d:%02d   |   ост ~%02d:%02d",
-                 L"  MEMFORGE v0.4.2   |   %ld.%ld GB RAM   |   %s   |   %s   |   %02d:%02d   |   ETA ~%02d:%02d"),
+               T(L"  MEMFORGE v0.4.3   |   %ld.%ld ГБ RAM   |   %s   |   %s   |   %02d:%02d   |   ост ~%02d:%02d",
+                 L"  MEMFORGE v0.4.3   |   %ld.%ld GB RAM   |   %s   |   %s   |   %02d:%02d   |   ETA ~%02d:%02d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
                err_tag,
@@ -1191,16 +1191,16 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
                eta_secs / 60, eta_secs % 60);
     } else if (cols >= 70) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.2  |  %ld.%ld ГБ RAM  |  %s  |  %s  |  %02d:%02d",
-                 L"  MEMFORGE v0.4.2  |  %ld.%ld GB RAM  |  %s  |  %s  |  %02d:%02d"),
+               T(L"  MEMFORGE v0.4.3  |  %ld.%ld ГБ RAM  |  %s  |  %s  |  %02d:%02d",
+                 L"  MEMFORGE v0.4.3  |  %ld.%ld GB RAM  |  %s  |  %s  |  %02d:%02d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
                err_tag,
                secs / 60, secs % 60);
     } else {
         SPrint(buf, sizeof(buf),
-               T(L" MEMFORGE v0.4.2 | %s | %s | %02d:%02d",
-                 L" MEMFORGE v0.4.2 | %s | %s | %02d:%02d"),
+               T(L" MEMFORGE v0.4.3 | %s | %s | %02d:%02d",
+                 L" MEMFORGE v0.4.3 | %s | %s | %02d:%02d"),
                pass_tag,
                err_tag,
                secs / 60, secs % 60);
@@ -7102,20 +7102,40 @@ static test_summary_t run_test_mc(UINTN test_idx) {
 
     /* Non-blocking AP dispatch: pass dummy WaitEvent so StartupThisAP
        returns immediately. Without this, BSP blocks per-AP and "parallel"
-       cores actually serialise. This was the v0.3 freeze. */
+       cores actually serialise. This was the v0.3 freeze.
+       Diagnostic logging added in v0.4.3 to pinpoint AP-dispatch hangs
+       on AMD ASUS firmware (StartupThisAP sometimes blocks even with a
+       dummy WaitEvent on AMI B450/B550 AMD UEFI). */
     EFI_EVENT ap_events[MAX_CORES] = {0};
     if (g_mp && g_n_enabled > 1) {
+        if (test_idx == 0) {
+            CHAR16 lb[140];
+            SPrint(lb, sizeof(lb),
+                   L"[DISP] dispatching %d AP(s) via StartupThisAP (non-blocking)",
+                   (UINT32)(g_n_enabled - 1));
+            log_line(lb);
+        }
         for (UINTN i = 1; i < g_n_enabled; i++) {
             uefi_call_wrapper(BS->CreateEvent, 5, 0, 0, NULL, NULL, &ap_events[i]);
-            uefi_call_wrapper(g_mp->StartupThisAP, 7, g_mp,
+            EFI_STATUS sd = uefi_call_wrapper(g_mp->StartupThisAP, 7, g_mp,
                               (EFI_AP_PROCEDURE)ap_entry,
                               i, ap_events[i], 0, &g_args[i], NULL);
+            if (test_idx == 0 && EFI_ERROR(sd)) {
+                CHAR16 lb[120];
+                SPrint(lb, sizeof(lb),
+                       L"[DISP] StartupThisAP slot=%d failed status=0x%lx",
+                       (UINT32)i, (UINT64)sd);
+                log_line(lb);
+            }
         }
+        if (test_idx == 0) log_line(L"[DISP] all StartupThisAP calls returned");
     }
 
     /* BSP runs slot 0 inline. Its kernel calls ap_yield(a) periodically,
        which routes to bsp_yield_render — that's how bars stay live. */
+    if (test_idx == 0) log_line(L"[DISP] BSP entering ap_entry for slot 0");
     ap_entry(&g_args[0]);
+    if (test_idx == 0) log_line(L"[DISP] BSP returned from ap_entry slot 0");
 
     /* Once-per-run diagnostic: how many APs got HWP successfully. */
     static int g_hwp_summary_logged = 0;
@@ -7575,8 +7595,8 @@ static void render_summary(UINT64 total_ms) {
     UINTN hrow = (g_hdr_h / 2 - g_char_h / 2) / g_char_h;
     CHAR16 buf[200];
     SPrint(buf, sizeof(buf),
-           T(L"  MEMFORGE v0.4.2 ИТОГИ   |   %d сек   |   Ядра %d/%d",
-             L"  MEMFORGE v0.4.2 SUMMARY   |   %d sec   |   Cores %d/%d"),
+           T(L"  MEMFORGE v0.4.3 ИТОГИ   |   %d сек   |   Ядра %d/%d",
+             L"  MEMFORGE v0.4.3 SUMMARY   |   %d sec   |   Cores %d/%d"),
            (UINT32)(total_ms / 1000),
            (UINT32)g_n_enabled, (UINT32)g_n_cores);
     say_at_rc(0, hrow, buf);
@@ -9350,7 +9370,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
         }
     }
 
-    log_line(L"=== MemForge2 v0.4.2 init ===");
+    log_line(L"=== MemForge2 v0.4.3 init ===");
     log_line(L"[WATCHDOG] UEFI 5-min watchdog disabled at app entry");
     /* Show splash IMMEDIATELY so the user sees the program is alive while
        INI parsing, SMBus probes and SMBIOS walk happen. Without this, the
