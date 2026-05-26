@@ -1,0 +1,39 @@
+CC      := gcc
+EFIINC  := /usr/include/efi
+EFILIB  := /usr/lib
+
+CFLAGS  := -ffreestanding -O2 -Wall -Wno-unused-parameter -Wno-pointer-sign \
+           -fshort-wchar -fno-stack-protector -fno-strict-aliasing \
+           -mno-red-zone -fpic -fvisibility=hidden \
+           -DGNU_EFI_USE_MS_ABI -DHAVE_USE_MS_ABI=1 \
+           -I$(EFIINC) -I$(EFIINC)/x86_64 -I.
+
+LDFLAGS := -nostdlib -shared -Wl,--warn-common \
+           -fuse-ld=gold \
+           -Wl,-T,$(EFILIB)/elf_x86_64_efi.lds \
+           $(EFILIB)/crt0-efi-x86_64.o -L$(EFILIB)
+
+LIBS    := -lefi -lgnuefi -lgcc
+
+TARGET  := MemForge2.efi
+SRC     := MemForge2.src.c
+OBJ     := $(SRC:.c=.o)
+SO      := $(SRC:.c=.so)
+
+.PHONY: all clean
+
+all: $(TARGET)
+
+%.o: %.c MemForge2.mp.h
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(SO): $(OBJ)
+	$(CC) $(LDFLAGS) -o $@ $(OBJ) $(LIBS)
+
+$(TARGET): $(SO)
+	objcopy -j .text -j .sdata -j .data -j .dynamic -j .dynsym \
+	        -j .rel -j .rela -j .reloc \
+	        --target=efi-app-x86_64 $< $@
+
+clean:
+	rm -f $(OBJ) $(SO) $(TARGET)
