@@ -839,7 +839,7 @@ static void init_splash(CHAR16 *stage) {
     cls();
     UINTN cy = g_h / 2;
     /* Title — large centered line. */
-    CHAR16 *title = L"MEMFORGE v0.4.13";
+    CHAR16 *title = L"MEMFORGE v0.4.14";
     UINTN tx = (g_w - StrLen(title) * g_char_w) / 2;
     gfx_draw_str_color(tx, cy - g_char_h * 2, title, COL_ACCENT_HI);
     /* Stage indicator — what we're doing right now. */
@@ -1182,9 +1182,9 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
     UINTN cols = g_text_cols;
     if (cols >= 110) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.13   |   %ld.%ld ГБ RAM   |   %s   "
+               T(L"  MEMFORGE v0.4.14   |   %ld.%ld ГБ RAM   |   %s   "
                  L"|   %s   |   %02d:%02d   |   ост ~%02d:%02d   |   Тесты %d/%d",
-                 L"  MEMFORGE v0.4.13   |   %ld.%ld GB RAM   |   %s   "
+                 L"  MEMFORGE v0.4.14   |   %ld.%ld GB RAM   |   %s   "
                  L"|   %s   |   %02d:%02d   |   ETA ~%02d:%02d   |   Tests %d/%d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
@@ -1194,8 +1194,8 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
                (UINT32)done, (UINT32)total);
     } else if (cols >= 90) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.13   |   %ld.%ld ГБ RAM   |   %s   |   %s   |   %02d:%02d   |   ост ~%02d:%02d",
-                 L"  MEMFORGE v0.4.13   |   %ld.%ld GB RAM   |   %s   |   %s   |   %02d:%02d   |   ETA ~%02d:%02d"),
+               T(L"  MEMFORGE v0.4.14   |   %ld.%ld ГБ RAM   |   %s   |   %s   |   %02d:%02d   |   ост ~%02d:%02d",
+                 L"  MEMFORGE v0.4.14   |   %ld.%ld GB RAM   |   %s   |   %s   |   %02d:%02d   |   ETA ~%02d:%02d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
                err_tag,
@@ -1203,16 +1203,16 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
                eta_secs / 60, eta_secs % 60);
     } else if (cols >= 70) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.13  |  %ld.%ld ГБ RAM  |  %s  |  %s  |  %02d:%02d",
-                 L"  MEMFORGE v0.4.13  |  %ld.%ld GB RAM  |  %s  |  %s  |  %02d:%02d"),
+               T(L"  MEMFORGE v0.4.14  |  %ld.%ld ГБ RAM  |  %s  |  %s  |  %02d:%02d",
+                 L"  MEMFORGE v0.4.14  |  %ld.%ld GB RAM  |  %s  |  %s  |  %02d:%02d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
                err_tag,
                secs / 60, secs % 60);
     } else {
         SPrint(buf, sizeof(buf),
-               T(L" MEMFORGE v0.4.13 | %s | %s | %02d:%02d",
-                 L" MEMFORGE v0.4.13 | %s | %s | %02d:%02d"),
+               T(L" MEMFORGE v0.4.14 | %s | %s | %02d:%02d",
+                 L" MEMFORGE v0.4.14 | %s | %s | %02d:%02d"),
                pass_tag,
                err_tag,
                secs / 60, secs % 60);
@@ -4458,19 +4458,39 @@ static void hist_save_and_diff(UINT64 total_ms) {
                    g_hist_prev.total_time_s);
             log_line(lb);
         }
+        /* Intensity-similarity check: if BW peak shifted by more than ±40%,
+           the workload was clearly different (different MaxCores, different
+           Quick vs Full mode, prev hit thermal guard and ran single-core
+           while current ran multi-core, etc.). Comparing peak temperature
+           across wildly different intensity profiles produces meaningless
+           "thermal regression" warnings. Field-reported false-positive
+           v0.4.13: prev run was single-core (capped by old thermal guard,
+           peak 92°C, BW 4072 MB/s); current run multi-core (peak 126°C,
+           BW 9193 MB/s, +126% BW). The +34°C delta is from intensity
+           change, not from cooling degradation. */
+        int abs_d_bw = (d_bw >= 0) ? d_bw : -d_bw;
+        int similar_intensity = (abs_d_bw <= 40);
+        if (!similar_intensity) {
+            SPrint(lb, sizeof(lb),
+                   L"[HIST] BW peak differs by %d%% from prev run — workload "
+                   L"intensity changed (different config?); skipping "
+                   L"thermal/BW delta warnings",
+                   abs_d_bw);
+            log_line(lb);
+        }
         if (d_err > 0) {
             SPrint(lb, sizeof(lb),
                    L"[HIST] ⚠ REGRESSION: %d new errors since last run",
                    d_err);
             log_line(lb);
         }
-        if (d_temp >= 5 && prev_long_enough) {
+        if (d_temp >= 5 && prev_long_enough && similar_intensity) {
             SPrint(lb, sizeof(lb),
                    L"[HIST] ⚠ temp rose %d°C vs last run — check airflow/paste",
                    d_temp);
             log_line(lb);
         }
-        if (d_bw <= -5 && prev_long_enough) {
+        if (d_bw <= -5 && prev_long_enough && similar_intensity) {
             SPrint(lb, sizeof(lb),
                    L"[HIST] ⚠ BW dropped %d%% vs last run — possible degradation",
                    -d_bw);
@@ -7768,8 +7788,8 @@ static void render_summary(UINT64 total_ms) {
     UINTN hrow = (g_hdr_h / 2 - g_char_h / 2) / g_char_h;
     CHAR16 buf[200];
     SPrint(buf, sizeof(buf),
-           T(L"  MEMFORGE v0.4.13 ИТОГИ   |   %d сек   |   Ядра %d/%d",
-             L"  MEMFORGE v0.4.13 SUMMARY   |   %d sec   |   Cores %d/%d"),
+           T(L"  MEMFORGE v0.4.14 ИТОГИ   |   %d сек   |   Ядра %d/%d",
+             L"  MEMFORGE v0.4.14 SUMMARY   |   %d sec   |   Cores %d/%d"),
            (UINT32)(total_ms / 1000),
            (UINT32)g_n_enabled, (UINT32)g_n_cores);
     say_at_rc(0, hrow, buf);
@@ -9543,7 +9563,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
         }
     }
 
-    log_line(L"=== MemForge2 v0.4.13 init ===");
+    log_line(L"=== MemForge2 v0.4.14 init ===");
     log_line(L"[WATCHDOG] UEFI 5-min watchdog disabled at app entry");
     /* Show splash IMMEDIATELY so the user sees the program is alive while
        INI parsing, SMBus probes and SMBIOS walk happen. Without this, the
