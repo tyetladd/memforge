@@ -836,7 +836,7 @@ static void init_splash(CHAR16 *stage) {
     cls();
     UINTN cy = g_h / 2;
     /* Title — large centered line. */
-    CHAR16 *title = L"MEMFORGE v0.4.7";
+    CHAR16 *title = L"MEMFORGE v0.4.8";
     UINTN tx = (g_w - StrLen(title) * g_char_w) / 2;
     gfx_draw_str_color(tx, cy - g_char_h * 2, title, COL_ACCENT_HI);
     /* Stage indicator — what we're doing right now. */
@@ -1179,9 +1179,9 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
     UINTN cols = g_text_cols;
     if (cols >= 110) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.7   |   %ld.%ld ГБ RAM   |   %s   "
+               T(L"  MEMFORGE v0.4.8   |   %ld.%ld ГБ RAM   |   %s   "
                  L"|   %s   |   %02d:%02d   |   ост ~%02d:%02d   |   Тесты %d/%d",
-                 L"  MEMFORGE v0.4.7   |   %ld.%ld GB RAM   |   %s   "
+                 L"  MEMFORGE v0.4.8   |   %ld.%ld GB RAM   |   %s   "
                  L"|   %s   |   %02d:%02d   |   ETA ~%02d:%02d   |   Tests %d/%d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
@@ -1191,8 +1191,8 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
                (UINT32)done, (UINT32)total);
     } else if (cols >= 90) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.7   |   %ld.%ld ГБ RAM   |   %s   |   %s   |   %02d:%02d   |   ост ~%02d:%02d",
-                 L"  MEMFORGE v0.4.7   |   %ld.%ld GB RAM   |   %s   |   %s   |   %02d:%02d   |   ETA ~%02d:%02d"),
+               T(L"  MEMFORGE v0.4.8   |   %ld.%ld ГБ RAM   |   %s   |   %s   |   %02d:%02d   |   ост ~%02d:%02d",
+                 L"  MEMFORGE v0.4.8   |   %ld.%ld GB RAM   |   %s   |   %s   |   %02d:%02d   |   ETA ~%02d:%02d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
                err_tag,
@@ -1200,16 +1200,16 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
                eta_secs / 60, eta_secs % 60);
     } else if (cols >= 70) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.7  |  %ld.%ld ГБ RAM  |  %s  |  %s  |  %02d:%02d",
-                 L"  MEMFORGE v0.4.7  |  %ld.%ld GB RAM  |  %s  |  %s  |  %02d:%02d"),
+               T(L"  MEMFORGE v0.4.8  |  %ld.%ld ГБ RAM  |  %s  |  %s  |  %02d:%02d",
+                 L"  MEMFORGE v0.4.8  |  %ld.%ld GB RAM  |  %s  |  %s  |  %02d:%02d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
                err_tag,
                secs / 60, secs % 60);
     } else {
         SPrint(buf, sizeof(buf),
-               T(L" MEMFORGE v0.4.7 | %s | %s | %02d:%02d",
-                 L" MEMFORGE v0.4.7 | %s | %s | %02d:%02d"),
+               T(L" MEMFORGE v0.4.8 | %s | %s | %02d:%02d",
+                 L" MEMFORGE v0.4.8 | %s | %s | %02d:%02d"),
                pass_tag,
                err_tag,
                secs / 60, secs % 60);
@@ -2795,38 +2795,83 @@ static void run_avx2_sustained(ap_arg_t *a) {
 
         /* Heavy FMA chain — must dominate wall-clock time vs the memory
            fill above, otherwise the CPU sits in DRAM-stall and never
-           warms up. 8 independent dep chains saturate the FMA pipes on
-           both Alder Lake P-cores (2 FMA ports × 4-cyc latency) and
-           E-cores (1 FMA port × 256-bit cracked = 8-cyc effective).
-           Previously 3 M iters × 4 chains = ~3 ms of heat vs ~100 ms of
-           memory wait — fraction of TDP. Now: 15 M iters × 8 chains
-           = ~75 ms of heat per outer cycle, matches memory wait. */
-        UINTN fma_iters = 15000000;
-        __asm__ __volatile__(
-            "vmovdqu (%[pat]), %%ymm0\n\t"
-            "vmovdqu (%[pat]), %%ymm1\n\t"
-            "vmovdqu (%[pat]), %%ymm2\n\t"
-            "vmovdqu (%[pat]), %%ymm3\n\t"
-            "vmovdqu (%[pat]), %%ymm4\n\t"
-            "vmovdqu (%[pat]), %%ymm5\n\t"
-            "vmovdqu (%[pat]), %%ymm6\n\t"
-            "vmovdqu (%[pat]), %%ymm7\n\t"
-            "1:\n\t"
-            "vfmadd231ps %%ymm0, %%ymm0, %%ymm0\n\t"
-            "vfmadd231ps %%ymm1, %%ymm1, %%ymm1\n\t"
-            "vfmadd231ps %%ymm2, %%ymm2, %%ymm2\n\t"
-            "vfmadd231ps %%ymm3, %%ymm3, %%ymm3\n\t"
-            "vfmadd231ps %%ymm4, %%ymm4, %%ymm4\n\t"
-            "vfmadd231ps %%ymm5, %%ymm5, %%ymm5\n\t"
-            "vfmadd231ps %%ymm6, %%ymm6, %%ymm6\n\t"
-            "vfmadd231ps %%ymm7, %%ymm7, %%ymm7\n\t"
-            "dec %[cnt]\n\t"
-            "jnz 1b\n\t"
-            "vzeroupper\n\t"
-            : [cnt] "+r"(fma_iters)
-            : [pat] "r"(pat)
-            : "ymm0", "ymm1", "ymm2", "ymm3",
-              "ymm4", "ymm5", "ymm6", "ymm7", "cc");
+           warms up. Vendor-aware intensity to avoid VRM trip / thermal
+           halt on budget AMD boards:
+
+             Intel: 15M iters × 8 dep chains. Intel HWP throttles
+             aggressively per-core; high-end Z-series VRMs handle the
+             load; matches Prime95 Small FFT power profile (~150W on
+             i7-12700K). Field-tested OK on Z690, Z790, OptiPlex 7060.
+
+             AMD: 5M iters × 4 dep chains, PLUS a 'pause × 4' breather
+             every 128K outer iterations. Power profile drops ~70%
+             without losing the "sustained AVX2 stress" semantic.
+             Reason: AMD Zen has double-pumped AVX2 (256-bit YMM
+             dispatched as 2× 128-bit ops), and budget ASUS B-series /
+             MSI Pro 4-fase VRMs cannot sustain a Prime95-class
+             workload on 12 cores — field-reported halt on Ryzen 5 4500
+             + ASUS B-series traces directly to this. With the softer
+             load, AMD systems still measurably heat up (good for
+             surfacing VRM transients and thermal-margin DRAM faults),
+             but stay within VRM and Tjmax envelope. */
+        UINTN fma_iters_full = (g_cpu_vendor == CPU_AMD) ? 5000000 : 15000000;
+        UINTN fma_iters = fma_iters_full;
+        if (g_cpu_vendor == CPU_AMD) {
+            /* 4 chains + pause-every-N variant — softer thermal envelope. */
+            __asm__ __volatile__(
+                "vmovdqu (%[pat]), %%ymm0\n\t"
+                "vmovdqu (%[pat]), %%ymm1\n\t"
+                "vmovdqu (%[pat]), %%ymm2\n\t"
+                "vmovdqu (%[pat]), %%ymm3\n\t"
+                "1:\n\t"
+                "vfmadd231ps %%ymm0, %%ymm0, %%ymm0\n\t"
+                "vfmadd231ps %%ymm1, %%ymm1, %%ymm1\n\t"
+                "vfmadd231ps %%ymm2, %%ymm2, %%ymm2\n\t"
+                "vfmadd231ps %%ymm3, %%ymm3, %%ymm3\n\t"
+                "dec %[cnt]\n\t"
+                "jz 2f\n\t"
+                /* Every 131072 iterations (0x1FFFF mask) insert a small
+                   pause to let VRM / thermal recover. Adds <0.1% wall-
+                   clock overhead but prevents sustained pipeline
+                   saturation that trips weak VRMs. */
+                "mov %[cnt], %%rax\n\t"
+                "and $0x1FFFF, %%rax\n\t"
+                "jnz 1b\n\t"
+                "pause\n\tpause\n\tpause\n\tpause\n\t"
+                "jmp 1b\n\t"
+                "2:\n\t"
+                "vzeroupper\n\t"
+                : [cnt] "+r"(fma_iters)
+                : [pat] "r"(pat)
+                : "ymm0", "ymm1", "ymm2", "ymm3", "rax", "cc");
+        } else {
+            /* 8 chains, no breather — Intel HWP handles throttling. */
+            __asm__ __volatile__(
+                "vmovdqu (%[pat]), %%ymm0\n\t"
+                "vmovdqu (%[pat]), %%ymm1\n\t"
+                "vmovdqu (%[pat]), %%ymm2\n\t"
+                "vmovdqu (%[pat]), %%ymm3\n\t"
+                "vmovdqu (%[pat]), %%ymm4\n\t"
+                "vmovdqu (%[pat]), %%ymm5\n\t"
+                "vmovdqu (%[pat]), %%ymm6\n\t"
+                "vmovdqu (%[pat]), %%ymm7\n\t"
+                "1:\n\t"
+                "vfmadd231ps %%ymm0, %%ymm0, %%ymm0\n\t"
+                "vfmadd231ps %%ymm1, %%ymm1, %%ymm1\n\t"
+                "vfmadd231ps %%ymm2, %%ymm2, %%ymm2\n\t"
+                "vfmadd231ps %%ymm3, %%ymm3, %%ymm3\n\t"
+                "vfmadd231ps %%ymm4, %%ymm4, %%ymm4\n\t"
+                "vfmadd231ps %%ymm5, %%ymm5, %%ymm5\n\t"
+                "vfmadd231ps %%ymm6, %%ymm6, %%ymm6\n\t"
+                "vfmadd231ps %%ymm7, %%ymm7, %%ymm7\n\t"
+                "dec %[cnt]\n\t"
+                "jnz 1b\n\t"
+                "vzeroupper\n\t"
+                : [cnt] "+r"(fma_iters)
+                : [pat] "r"(pat)
+                : "ymm0", "ymm1", "ymm2", "ymm3",
+                  "ymm4", "ymm5", "ymm6", "ymm7", "cc");
+        }
 
         /* Verify after the FMA burst — heat may have corrupted memory */
         for (UINTN i = 0; i + 3 < n; i += 4) {
@@ -7688,8 +7733,8 @@ static void render_summary(UINT64 total_ms) {
     UINTN hrow = (g_hdr_h / 2 - g_char_h / 2) / g_char_h;
     CHAR16 buf[200];
     SPrint(buf, sizeof(buf),
-           T(L"  MEMFORGE v0.4.7 ИТОГИ   |   %d сек   |   Ядра %d/%d",
-             L"  MEMFORGE v0.4.7 SUMMARY   |   %d sec   |   Cores %d/%d"),
+           T(L"  MEMFORGE v0.4.8 ИТОГИ   |   %d сек   |   Ядра %d/%d",
+             L"  MEMFORGE v0.4.8 SUMMARY   |   %d sec   |   Cores %d/%d"),
            (UINT32)(total_ms / 1000),
            (UINT32)g_n_enabled, (UINT32)g_n_cores);
     say_at_rc(0, hrow, buf);
@@ -9463,7 +9508,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
         }
     }
 
-    log_line(L"=== MemForge2 v0.4.7 init ===");
+    log_line(L"=== MemForge2 v0.4.8 init ===");
     log_line(L"[WATCHDOG] UEFI 5-min watchdog disabled at app entry");
     /* Show splash IMMEDIATELY so the user sees the program is alive while
        INI parsing, SMBus probes and SMBIOS walk happen. Without this, the
