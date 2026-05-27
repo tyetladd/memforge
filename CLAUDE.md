@@ -20,16 +20,37 @@ but silently truncates or grows a file far beyond what was intended. The
 1. At the START of the session (or before the first edit):
      tools/linewatch.sh begin
 
-2. BEFORE each logical change (one task = one or more related Edit calls):
-     tools/linewatch.sh plan +ADDED -REMOVED -r "what this change does"
+2. BEFORE each Edit tool call, get the EXACT line delta. Two ways:
 
-3. Do the Edit calls.
+   (a) PREFERRED — derive from real old_string / new_string content
+       (no eyeball guessing, no drift):
 
-4. AFTER the change is complete:
+         cat > /tmp/old.txt <<'EOF'
+         <exact old_string the Edit will use>
+         EOF
+         cat > /tmp/new.txt <<'EOF'
+         <exact new_string the Edit will use>
+         EOF
+         tools/linewatch.sh plan-edit /tmp/old.txt /tmp/new.txt \
+                                      -f MemForge2.src.c -r "what this does"
+
+   (b) FALLBACK — only when the change is trivial (1-2 lines) and
+       counting on the fly is reliable:
+
+         tools/linewatch.sh plan +ADDED -REMOVED -f file -r "what this does"
+
+3. Do the Edit tool call.
+
+4. AFTER the change is complete (or after a logical batch of related Edits):
      tools/linewatch.sh check
    This MUST exit 0. If it exits 1 (MISMATCH), STOP — do not commit, do
    not push. Investigate: was the plan wrong, or did Edit affect more
    than intended? Recover via git checkout if needed, then re-plan.
+
+   Past failure mode (do NOT repeat): using fallback (b) for big edits,
+   eyeball-guessing +12 -2 when the real result was +23 -12. Drift docs
+   in commit messages were a workaround, not a fix. Always use (a) for
+   anything larger than a few-line tweak.
 
 5. Include the linewatch result in the git commit message (see below).
 

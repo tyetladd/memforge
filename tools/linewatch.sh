@@ -20,6 +20,23 @@
 #     the log. Multiple plan calls accumulate.
 #     Example: tools/linewatch.sh plan +50 -10 -r "add helper function"
 #
+#   tools/linewatch.sh plan-edit OLDFILE NEWFILE [-f FILE] [-r REASON]
+#     Same as plan, but compute +N -M EXACTLY by counting lines in
+#     OLDFILE (old_string content) and NEWFILE (new_string content).
+#     Eliminates eyeball-estimation drift — the planned delta will
+#     match what Edit actually does, modulo trailing-newline edge cases.
+#     Recommended workflow before every Edit tool call:
+#       cat > /tmp/old.txt <<'EOF'
+#       ...exact old_string...
+#       EOF
+#       cat > /tmp/new.txt <<'EOF'
+#       ...exact new_string...
+#       EOF
+#       tools/linewatch.sh plan-edit /tmp/old.txt /tmp/new.txt \
+#                                    -f MemForge2.src.c -r "what this does"
+#       <run Edit tool>
+#       tools/linewatch.sh check   # should pass cleanly
+#
 #   tools/linewatch.sh check [--tolerance N]
 #     Compare actual line counts to (baseline + sum of plans). If the
 #     deviation exceeds tolerance (default: 0 lines), print MISMATCH
@@ -120,6 +137,47 @@ cmd_plan() {
     echo "ok — planned +$added / -$removed for $file${reason:+ ($reason)}"
 }
 
+# Compute planned delta from real old_string / new_string content files,
+# eliminating eyeball-estimation drift. Caller writes the two strings to
+# temp files first (typical: /tmp/old.txt, /tmp/new.txt), passes the
+# paths here. We count via wc -l on each and record an exact plan.
+cmd_plan_edit() {
+    if [ $# -lt 2 ]; then
+        echo "linewatch plan-edit: need OLDFILE and NEWFILE paths" >&2
+        echo "Example: linewatch.sh plan-edit /tmp/old.txt /tmp/new.txt -f README.md -r 'rewrite intro'" >&2
+        exit 2
+    fi
+    local oldfile="$1"
+    local newfile="$2"
+    shift 2
+    local file="MemForge2.src.c"
+    local reason=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -f) file="$2"; shift 2 ;;
+            -r) reason="$2"; shift 2 ;;
+            *)  echo "linewatch plan-edit: unknown arg '$1'" >&2; exit 2 ;;
+        esac
+    done
+    if [ ! -f "$oldfile" ]; then
+        echo "linewatch plan-edit: old file '$oldfile' not found" >&2
+        exit 2
+    fi
+    if [ ! -f "$newfile" ]; then
+        echo "linewatch plan-edit: new file '$newfile' not found" >&2
+        exit 2
+    fi
+    if [ ! -f "$STATE" ]; then
+        echo "linewatch plan-edit: no state — run 'begin' first" >&2
+        exit 2
+    fi
+    local removed added
+    removed=$(count_lines "$oldfile")
+    added=$(count_lines "$newfile")
+    echo "plan:$file:$added:$removed:$reason" >> "$STATE"
+    echo "ok — planned +$added / -$removed for $file (from $(basename "$oldfile") -> $(basename "$newfile"))${reason:+ — $reason}"
+}
+
 cmd_check() {
     while [ $# -gt 0 ]; do
         case "$1" in
@@ -205,22 +263,23 @@ cmd_reset() {
 # --- dispatch -------------------------------------------------------
 
 case "${1:-}" in
-    begin)  shift; cmd_begin  "$@" ;;
-    plan)   shift; cmd_plan   "$@" ;;
-    check)  shift; cmd_check  "$@" ;;
-    status) shift; cmd_status "$@" ;;
-    reset)  shift; cmd_reset  "$@" ;;
+    begin)     shift; cmd_begin     "$@" ;;
+    plan)      shift; cmd_plan      "$@" ;;
+    plan-edit) shift; cmd_plan_edit "$@" ;;
+    check)     shift; cmd_check     "$@" ;;
+    status)    shift; cmd_status    "$@" ;;
+    reset)     shift; cmd_reset     "$@" ;;
     "")
         echo "linewatch.sh — line-count tracker for surgical edits"
         echo ""
-        echo "Usage: $0 {begin|plan|check|status|reset}"
+        echo "Usage: $0 {begin|plan|plan-edit|check|status|reset}"
         echo ""
         echo "Run $0 (no args) or read the script header for details."
         exit 2
         ;;
     *)
         echo "linewatch: unknown command '$1'" >&2
-        echo "Valid: begin, plan, check, status, reset" >&2
+        echo "Valid: begin, plan, plan-edit, check, status, reset" >&2
         exit 2
         ;;
 esac
