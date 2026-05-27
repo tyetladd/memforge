@@ -20,6 +20,13 @@ every run; press **[D]** for the technical breakdown — full 14-test table,
 per-error address/DIMM/DRAM-coord records, MCA bank diff, SPD timings, and
 BW degradation trend.*
 
+## Project status
+
+This is a side project I maintain alongside my main job (PC assembly /
+repair). Issues are addressed as my schedule allows, usually on weekends
+— weekdays leave very little time. Critical bugs (data corruption, system
+hangs) take priority over feature requests. Thanks for your patience.
+
 ## What it actually does
 
 - 14 memory tests covering pattern faults, retention, row hammering, address
