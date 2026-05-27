@@ -1,5 +1,5 @@
 /*
- * MemForge2 v0.4.26 — UEFI memory tester written from scratch.
+ * MemForge2 v0.4.27 — UEFI memory tester written from scratch.
  *
  * Latest release: https://github.com/Paradoxdov/memforge/releases
  * For per-version changes see git log / GitHub Releases page.
@@ -417,7 +417,7 @@ static int    g_cfg_buffer_cap_explicit = 0;  /* user set BufferMB in INI? */
    physically removing the others. Set via [Run] TestOnlyDimm=N. */
 static UINT32 g_cfg_test_only_dimm = 0;     /* 0 = all DIMMs (default) */
 
-/* v0.4.26 — auto-isolation state.
+/* v0.4.27 — auto-isolation state.
    When the post-test verdict detects "errors on multiple DIMMs, block-
    mapped Type 20" we offer the user [I] to automatically re-test each
    affected DIMM with TestOnlyDimm in turn, giving a definitive
@@ -856,7 +856,7 @@ static void init_splash(CHAR16 *stage) {
     cls();
     UINTN cy = g_h / 2;
     /* Title — large centered line. */
-    CHAR16 *title = L"MEMFORGE v0.4.26";
+    CHAR16 *title = L"MEMFORGE v0.4.27";
     UINTN tx = (g_w - StrLen(title) * g_char_w) / 2;
     gfx_draw_str_color(tx, cy - g_char_h * 2, title, COL_ACCENT_HI);
     /* Stage indicator — what we're doing right now. */
@@ -960,7 +960,7 @@ static UINTN g_card_cols = 1;
    compute_layout(). */
 static int g_show_cards = 1;
 
-/* v0.4.26 — focused cards layout for small screens (g_h < 900).
+/* v0.4.27 — focused cards layout for small screens (g_h < 900).
    Instead of one full-width row per test (14 rows × ~40 px = 560 px,
    which on a 1024×768 screen eats 70% of vertical space and clips the
    core panel + footer), we draw:
@@ -1030,7 +1030,7 @@ static void compute_layout(UINTN n_tests) {
     g_card_w = g_inner;
     g_card_row_h = g_compact ? g_char_h : (g_char_h + 16);
 
-    /* v0.4.26 — focused layout on small screens.
+    /* v0.4.27 — focused layout on small screens.
        On g_h<900 the per-test card list eats 60-70% of vertical space
        and clips the core panel / footer (YgrecK field report on 1024×768
        Radeon HD 4350). Replace with: 1-row strip of all test dots +
@@ -1244,9 +1244,9 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
     UINTN cols = g_text_cols;
     if (cols >= 110) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.26   |   %ld.%ld ГБ RAM   |   %s   "
+               T(L"  MEMFORGE v0.4.27   |   %ld.%ld ГБ RAM   |   %s   "
                  L"|   %s   |   прошло %02d:%02d   |   осталось ~%02d:%02d   |   Тесты %d/%d",
-                 L"  MEMFORGE v0.4.26   |   %ld.%ld GB RAM   |   %s   "
+                 L"  MEMFORGE v0.4.27   |   %ld.%ld GB RAM   |   %s   "
                  L"|   %s   |   elapsed %02d:%02d   |   ETA ~%02d:%02d   |   Tests %d/%d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
@@ -1256,8 +1256,8 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
                (UINT32)done, (UINT32)total);
     } else if (cols >= 90) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.26   |   %ld.%ld ГБ RAM   |   %s   |   %s   |   прошло %02d:%02d   |   осталось ~%02d:%02d",
-                 L"  MEMFORGE v0.4.26   |   %ld.%ld GB RAM   |   %s   |   %s   |   elapsed %02d:%02d   |   ETA ~%02d:%02d"),
+               T(L"  MEMFORGE v0.4.27   |   %ld.%ld ГБ RAM   |   %s   |   %s   |   прошло %02d:%02d   |   осталось ~%02d:%02d",
+                 L"  MEMFORGE v0.4.27   |   %ld.%ld GB RAM   |   %s   |   %s   |   elapsed %02d:%02d   |   ETA ~%02d:%02d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
                err_tag,
@@ -1265,16 +1265,16 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
                eta_secs / 60, eta_secs % 60);
     } else if (cols >= 70) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.26  |  %ld.%ld ГБ RAM  |  %s  |  %s  |  прошло %02d:%02d",
-                 L"  MEMFORGE v0.4.26  |  %ld.%ld GB RAM  |  %s  |  %s  |  elapsed %02d:%02d"),
+               T(L"  MEMFORGE v0.4.27  |  %ld.%ld ГБ RAM  |  %s  |  %s  |  прошло %02d:%02d",
+                 L"  MEMFORGE v0.4.27  |  %ld.%ld GB RAM  |  %s  |  %s  |  elapsed %02d:%02d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
                err_tag,
                secs / 60, secs % 60);
     } else {
         SPrint(buf, sizeof(buf),
-               T(L" MEMFORGE v0.4.26 | %s | %s | прошло %02d:%02d",
-                 L" MEMFORGE v0.4.26 | %s | %s | elapsed %02d:%02d"),
+               T(L" MEMFORGE v0.4.27 | %s | %s | прошло %02d:%02d",
+                 L" MEMFORGE v0.4.27 | %s | %s | elapsed %02d:%02d"),
                pass_tag,
                err_tag,
                secs / 60, secs % 60);
@@ -1800,7 +1800,7 @@ static int dominant_dimm_idx(void) {
     return best;
 }
 
-/* v0.4.26 — detect dual-channel interleave ambiguity.
+/* v0.4.27 — detect dual-channel interleave ambiguity.
    On consumer desktops with dual/quad-channel memory, the iMC interleaves
    addresses between channels at 64-byte (cache-line) granularity. A
    SINGLE bad chip on one stick produces errors that, when mapped through
@@ -1809,7 +1809,7 @@ static int dominant_dimm_idx(void) {
 
    Field report from a Habr user (Netac DDR4 kit): same stuck bit
    D[53] was reported 24 times, distributed as A2 (8) + B2 (11) + ? (5).
-   Pre-v0.4.26 verdict confidently said "REPLACE: DDR4-B2 (HIGH)" — but
+   Pre-v0.4.27 verdict confidently said "REPLACE: DDR4-B2 (HIGH)" — but
    physically it's likely ONE bad chip on one of A2/B2, NOT both.
 
    This helper returns the list of DIMM indices that each hold >=25% of
@@ -1855,7 +1855,7 @@ static UINTN distributed_dimm_indices(int *out_idx, UINTN cap) {
     return n;
 }
 
-/* v0.4.26 — Approach D: detect whether SMBIOS Type 20 reports REAL
+/* v0.4.27 — Approach D: detect whether SMBIOS Type 20 reports REAL
    cache-line interleave (overlapping address ranges across DIMMs) or
    BLOCK mapping (disjoint ranges, each DIMM owns its own physical
    region). PassMark forum & KIT paper both confirm that even though
@@ -1899,7 +1899,7 @@ static UINT8 type20_max_interleave_depth(void) {
     return m;
 }
 
-/* v0.4.26 — Approach A: bit-6 polarity analysis of error addresses.
+/* v0.4.27 — Approach A: bit-6 polarity analysis of error addresses.
    On most Intel/AMD consumer dual-channel desktops with DDR4/DDR5, the
    iMC's channel selector is physical address bit 6 (alternating 64-byte
    cache lines between channels). If all error records share the same
@@ -4867,7 +4867,7 @@ static void amd_thermal_probe(void) {
 }
 
 static UINT32 amd_thermal_sample(void) {
-    /* v0.4.26 — correct decode per Linux k10temp / FreeBSD amdtemp.c:
+    /* v0.4.27 — correct decode per Linux k10temp / FreeBSD amdtemp.c:
        SMN 0x59800 (SMU_THM_TCON_CUR_TMP)
          bits [31:21]  raw temperature value (11 bits, mask 0x7FF)
          bit  19       TempRangeSel — when SET, scale is -49°C..+206°C
@@ -4875,7 +4875,7 @@ static UINT32 amd_thermal_sample(void) {
                        scale is 0..225°C (no offset).
        temp_c = (raw * 0.125) - (range_sel ? 49 : 0)
 
-       Pre-v0.4.26 code was missing both the 0x7FF mask AND the bit-19
+       Pre-v0.4.27 code was missing both the 0x7FF mask AND the bit-19
        range adjustment, which inflated readings by ~49°C on Ryzen SKUs
        that report on the -49..206 scale (most Renoir/Cezanne/Zen3+
        desktop parts). Field report on Ryzen 5 4500 showed Tctl=93°C at
@@ -6495,7 +6495,7 @@ static test_def_t g_tests[] = {
 };
 #define N_TESTS (sizeof(g_tests) / sizeof(g_tests[0]))
 
-/* v0.4.26 — map a kernel enum (KER_*) to its position in g_tests[].
+/* v0.4.27 — map a kernel enum (KER_*) to its position in g_tests[].
    CRITICAL: do NOT index g_tests[] directly by a kernel_id_t value.
    The enum values do not match array positions (e.g., KER_AVX2_SUSTAINED
    = 12 maps to position 0 in g_tests because AVX2 Sustained is the
@@ -6647,7 +6647,7 @@ typedef struct {
 } card_info_t;
 static card_info_t g_cards[N_TESTS];
 
-/* v0.4.26 — Forward decls for focused-mode helpers (defined below
+/* v0.4.27 — Forward decls for focused-mode helpers (defined below
    card_paint so they can share the same color-lookup logic). */
 static void card_paint_full(UINTN i);
 static void card_strip_paint(UINTN i);
@@ -6761,7 +6761,7 @@ static void card_paint_full(UINTN i) {
     }
 }
 
-/* ---------- Focused-mode card painters (v0.4.26) ---------- */
+/* ---------- Focused-mode card painters (v0.4.27) ---------- */
 
 /* Paint the small status dot for test i in the top strip. The strip is
    one row tall and shows N evenly-spaced dots, one per test. The dot
@@ -6844,7 +6844,7 @@ static void card_focused_paint(UINTN i) {
     blt_fill(ix, row3_y, iw, row_h, COL_PANEL);
 
     /* Row 1: test name (left) + short description in dim color + index counter (right).
-       v0.4.26 — description lets non-expert user know what the test
+       v0.4.27 — description lets non-expert user know what the test
        actually checks (TRRespass / March-C- / Butterfly etc. are jargon). */
     say_at_px(ix + 4, row1_y, g_tests[i].name);
     UINTN name_chars = StrLen(g_tests[i].name);
@@ -7129,7 +7129,7 @@ static void core_cols_compute(core_cols_t *c) {
     if (slack >= 9 * cw + pad) { w_freq = 9 * cw; slack -= w_freq + pad; }
     /* Priority 4: Per-core MB/s — 6 chars */
     if (slack >= 6 * cw + pad) { w_mbs  = 6 * cw; slack -= w_mbs  + pad; }
-    /* v0.4.26 — "Смещ" (buffer-offset for this core's slice) column dropped
+    /* v0.4.27 — "Смещ" (buffer-offset for this core's slice) column dropped
        from the main test screen. It was a developer-debug field that nobody
        in the field could interpret; removing it frees ~9 chars to widen the
        activity bar. The offset is still in the log and the JSON. */
@@ -7495,8 +7495,8 @@ static void drain_conin(void) {
     }
 }
 
-/* v0.4.26 — countdown UX rework.
-   Pre-v0.4.26: ESC meant "skip the wait and start the test now" — which
+/* v0.4.27 — countdown UX rework.
+   Pre-v0.4.27: ESC meant "skip the wait and start the test now" — which
    completely contradicts the universal "ESC = cancel" convention. Users
    pressed ESC expecting "I don't want this test" and instead launched it.
 
@@ -7977,7 +7977,7 @@ static int verdict_describe_what_broke(CHAR16 *line1, UINTN cap1,
     return n;
 }
 
-/* ---------- v0.4.26 Auto-isolation feature ----------
+/* ---------- v0.4.27 Auto-isolation feature ----------
    When the post-test verdict detects "errors on 2+ DIMMs in block-mapped
    Type 20", we can definitively identify the bad stick(s) by re-running
    the failing test on each DIMM in turn with TestOnlyDimm, instead of
@@ -7985,7 +7985,7 @@ static int verdict_describe_what_broke(CHAR16 *line1, UINTN cap1,
    on real cache-line interleave, TestOnlyDimm doesn't physically isolate
    because the iMC still alternates between channels.                  */
 
-/* v0.4.26 — should auto-isolation kick in automatically?
+/* v0.4.27 — should auto-isolation kick in automatically?
    Same conditions as the [I] offer in render_simple_verdict, but checked
    from the main test loop right after tests complete so we can run
    isolation BEFORE showing the verdict and skip the "press [I] then wait"
@@ -8389,7 +8389,7 @@ static void render_isolation_verdict(void) {
 static void render_simple_verdict(UINT64 total_ms) {
     cls();
     verdict_kind_t v = compute_verdict_kind();
-    /* v0.4.26 — reset isolation offer; will be enabled below if applicable. */
+    /* v0.4.27 — reset isolation offer; will be enabled below if applicable. */
     g_iso_offer = 0;
     g_iso_dimm_n = 0;
 
@@ -8547,7 +8547,7 @@ static void render_simple_verdict(UINT64 total_ms) {
         UINTN dist_n = distributed_dimm_indices(dist_idx, MAX_DIMMS);
         int is_distributed = (dist_n >= 2);
 
-        /* v0.4.26 — Approach D + A: classify WHY errors are distributed.
+        /* v0.4.27 — Approach D + A: classify WHY errors are distributed.
              type20_overlap = 1 → ranges overlap (real cache-line interleave)
                                   → "ONE chip behind two labels"
              type20_overlap = 0, depth ≤ 1 → block mode (disjoint ranges,
@@ -8627,12 +8627,12 @@ static void render_simple_verdict(UINT64 total_ms) {
                 T(L"  это РЕАЛЬНО на разных физических плашках, обе дефектные.",
                   L"  on physically separate sticks; both are defective."),
                 COL_DIM); cy += cline + 6;
-            /* v0.4.26 — offer auto-isolation: re-test each DIMM in its own
+            /* v0.4.27 — offer auto-isolation: re-test each DIMM in its own
                physical address range to confirm WHICH ones are actually
                bad (vs symptom of one chip pretending to be two). Block-
                mapped Type 20 is the precondition — on real cache-line
                interleave TestOnlyDimm doesn't physically isolate.
-               v0.4.26 — only offer [I] if auto-isolation hasn't already
+               v0.4.27 — only offer [I] if auto-isolation hasn't already
                run (g_iso_results_n == 0). The normal flow now triggers
                isolation automatically right after the test loop, so the
                [I] offer here is only relevant when the user navigated
@@ -8838,7 +8838,7 @@ static void render_simple_verdict(UINT64 total_ms) {
     }
 
     /* Footer hint — same key handling as the technical summary, plus [D].
-       v0.4.26: [I] for auto-isolation when offered. */
+       v0.4.27: [I] for auto-isolation when offered. */
     UINTN foot_y = g_h - g_char_h - 8;
     blt_fill(0, foot_y - 4, g_w, g_char_h + 8, COL_PANEL_ALT);
     blt_fill(0, foot_y - 5, g_w, 1, COL_BORDER);
@@ -8867,8 +8867,8 @@ static void render_summary(UINT64 total_ms) {
     UINTN hrow = (g_hdr_h / 2 - g_char_h / 2) / g_char_h;
     CHAR16 buf[200];
     SPrint(buf, sizeof(buf),
-           T(L"  MEMFORGE v0.4.26 ИТОГИ   |   %d сек   |   Ядра %d/%d",
-             L"  MEMFORGE v0.4.26 SUMMARY   |   %d sec   |   Cores %d/%d"),
+           T(L"  MEMFORGE v0.4.27 ИТОГИ   |   %d сек   |   Ядра %d/%d",
+             L"  MEMFORGE v0.4.27 SUMMARY   |   %d sec   |   Cores %d/%d"),
            (UINT32)(total_ms / 1000),
            (UINT32)g_n_enabled, (UINT32)g_n_cores);
     say_at_rc(0, hrow, buf);
@@ -8950,7 +8950,7 @@ static void render_summary(UINT64 total_ms) {
                 CHAR16 chip[64] = L"";
                 if (didx >= 0)
                     chip_label_for_bit((UINT32)didx, bp, chip, 64);
-                /* v0.4.26 — use SMBIOS Type 17 locator string ("DDR4-B2")
+                /* v0.4.27 — use SMBIOS Type 17 locator string ("DDR4-B2")
                    instead of array-index-based "DIMM%d" which had nothing
                    to do with the physical slot label the user sees. */
                 CHAR8 *loc = (didx >= 0 && g_dimms[didx].locator[0])
@@ -9051,7 +9051,7 @@ static void render_summary(UINT64 total_ms) {
         log_line(dimm_line);
         row++;
 
-        /* (3) 1-GB histogram — v0.4.26: short label on its own row, then
+        /* (3) 1-GB histogram — v0.4.27: short label on its own row, then
            entries wrapped across multiple rows so nothing falls off the
            right edge on a 1024-pixel screen (a 14-entry histogram is
            ~120 chars which doesn't fit any reasonable single line). */
@@ -9713,161 +9713,133 @@ static const abt_line_t g_about_lines[] = {
     /* ===== Section 1: what this is ===== */
     { ABT_H,  L"━ ЧТО ЭТО ━",
               L"━ WHAT IT IS ━" },
-    { ABT_T,  L"UEFI-приложение для проверки ОЗУ.",
+    { ABT_T,  L"UEFI-приложение для проверки оперативной памяти.",
               L"UEFI app for RAM diagnostics." },
-    { ABT_T,  L"Грузится с USB до загрузки ОС.",
+    { ABT_T,  L"Грузится с USB до загрузки операционной системы.",
               L"Boots from USB before any OS loads." },
-    { ABT_T,  L"Тестит RAM параллельно на всех ядрах CPU.",
+    { ABT_T,  L"Тестит RAM параллельно на всех ядрах процессора.",
               L"Tests RAM in parallel on every CPU core." },
-    { ABT_T,  L"Ловит pattern-ошибки + ECC через MCA.",
-              L"Catches pattern errors + ECC via MCA." },
-    { ABT_T,  L"Цель — шоп/ремонт: приёмка, поиск дефектов.",
+    { ABT_T,  L"Назначение — шоп/ремонт: приёмка, поиск дефектов.",
               L"For shop/repair: intake QC, defect hunt." },
     { ABT_SP, L"", L"" },
 
-    /* ===== Section 2: tests in detail ===== */
-    { ABT_H,  L"━ ТЕСТЫ (12 шт.) ━",
-              L"━ TESTS (12 total) ━" },
-    { ABT_T,  L"1. AVX2 Sustained  — VRM/IMC stress (10 с)",
-              L"1. AVX2 Sustained  — VRM/IMC stress (10 s)" },
-    { ABT_T,  L"2. TRRespass       — 8-сторонний Row Hammer",
-              L"2. TRRespass       — 8-sided Row Hammer" },
-    { ABT_T,  L"3. Cache-Eviction  — CLFLUSH каждой строки",
-              L"3. Cache-Eviction  — CLFLUSH every line" },
-    { ABT_T,  L"4. March-C-        — 6-фазн., 92% coverage",
-              L"4. March-C-        — 6-phase, 92% coverage" },
-    { ABT_T,  L"5. Thermal Soak    — 3 мин AVX2+shuffle",
-              L"5. Thermal Soak    — 3-min AVX2+shuffle" },
-    { ABT_T,  L"6. BW Soak         — 5 мин streaming write+rd",
-              L"6. BW Soak         — 5-min streaming wr+rd" },
-    { ABT_T,  L"7. March-RAW       — Read-After-Write couple",
-              L"7. March-RAW       — Read-After-Write couple" },
-    { ABT_T,  L"8. Butterfly       — шахматка + flip соседей",
-              L"8. Butterfly       — checkerboard + neighbour" },
-    { ABT_T,  L"9. Address Pattern — ошибки адресации",
-              L"9. Address Pattern — addressing faults" },
-    { ABT_T,  L"10. VRM Square-Wave — transient response",
-              L"10. VRM Square-Wave — transient response" },
-    { ABT_T,  L"11. Random Pattern — xorshift64, 4 повтора",
-              L"11. Random Pattern — xorshift64, 4 reps" },
-    { ABT_T,  L"12. Bit Fade Ext.  — retention (wr→ждать→rd)",
-              L"12. Bit Fade Ext.  — retention (wr→wait→rd)" },
+    /* ===== Section 2: tests ===== */
+    { ABT_H,  L"━ ТЕСТЫ (14 шт.) ━",
+              L"━ TESTS (14 total) ━" },
+    { ABT_T,  L" 1. AVX2 Sustained   — нагрузка VRM/контроллера",
+              L" 1. AVX2 Sustained   — VRM/memctl stress" },
+    { ABT_T,  L" 2. TRRespass        — Row Hammer (для DDR4/5)",
+              L" 2. TRRespass        — Row Hammer (DDR4/5)" },
+    { ABT_T,  L" 3. Cache-Eviction   — нагрузка на шину памяти",
+              L" 3. Cache-Eviction   — memory bus stress" },
+    { ABT_T,  L" 4. March-C-         — классические pattern-ошибки",
+              L" 4. March-C-         — classic pattern faults" },
+    { ABT_T,  L" 5. Thermal Soak     — 3 мин прогрев CPU + памяти",
+              L" 5. Thermal Soak     — 3-min CPU+RAM heat-up" },
+    { ABT_T,  L" 6. BW Soak          — 5 мин нагрузка пропускной",
+              L" 6. BW Soak          — 5-min bandwidth stress" },
+    { ABT_T,  L" 7. March-RAW        — ошибки read-after-write",
+              L" 7. March-RAW        — read-after-write faults" },
+    { ABT_T,  L" 8. Butterfly        — взаимовлияние ячеек",
+              L" 8. Butterfly        — cell crosstalk" },
+    { ABT_T,  L" 9. Address Pattern  — ошибки адресации",
+              L" 9. Address Pattern  — addressing faults" },
+    { ABT_T,  L"10. VRM Square-Wave  — переходные процессы VRM",
+              L"10. VRM Square-Wave  — VRM transients" },
+    { ABT_T,  L"11. Random Pattern   — псевдослучайные паттерны",
+              L"11. Random Pattern   — pseudo-random patterns" },
+    { ABT_T,  L"12. Bit Fade Ext.    — потеря заряда ячеек (~8м)",
+              L"12. Bit Fade Ext.    — cell retention (~8 min)" },
+    { ABT_T,  L"13. L3 Cache Stress  — ошибки L3-кэша процессора",
+              L"13. L3 Cache Stress  — L3 cache cell faults" },
+    { ABT_T,  L"14. Stride BW        — проблемы каналов/TLB",
+              L"14. Stride BW        — channel/TLB issues" },
     { ABT_SP, L"", L"" },
 
-    /* ===== Section 3: strengths with concrete refs ===== */
-    { ABT_H,  L"━ В ЧЁМ МЫ СИЛЬНЫ ━",
-              L"━ OUR STRENGTHS ━" },
-    { ABT_P,  L"✓ TRRespass (Frigo et al., USENIX Sec 2020)",
-              L"✓ TRRespass (Frigo et al., USENIX Sec 2020)" },
-    { ABT_T,  L"  Академический патент-обходной Row Hammer.",
-              L"  Academic patent-bypassing Row Hammer." },
-    { ABT_T,  L"  memtest86+: наивный 2-aggressor (TRR гасит).",
-              L"  memtest86+: naive 2-aggressor (TRR defeats)." },
-    { ABT_T,  L"  PassMark: только базовый Row Hammer.",
-              L"  PassMark: only basic Row Hammer." },
-    { ABT_SP, L"", L"" },
-    { ABT_P,  L"✓ March-C- (van de Goor 1997, 6-фазный)",
-              L"✓ March-C- (van de Goor 1997, 6-phase)" },
-    { ABT_T,  L"  Промышл. алгоритм SRAM/DRAM, 92% покрытие.",
-              L"  Industrial SRAM/DRAM algo, 92% coverage." },
-    { ABT_T,  L"  Конкуренты: walking-1s/0s из 1980-х.",
-              L"  Competitors: walking-1s/0s from the 1980s." },
-    { ABT_SP, L"", L"" },
-    { ABT_P,  L"✓ HWP + PL1/PL2 lift — CPU на турбо",
-              L"✓ HWP + PL1/PL2 lift — CPU at turbo" },
-    { ABT_T,  L"  Просим CPU работать на max в UEFI.",
-              L"  Push CPU to max P-state in UEFI." },
-    { ABT_T,  L"  PassMark forum: 'у нас турбо НЕ работает'.",
-              L"  PassMark forum: 'no turbo in our tool'." },
-    { ABT_T,  L"  У нас работает на всех ядрах.",
-              L"  Ours runs at turbo on every core." },
-    { ABT_SP, L"", L"" },
-    { ABT_P,  L"✓ Mixed-port Thermal Soak (y-cruncher style)",
-              L"✓ Mixed-port Thermal Soak (y-cruncher style)" },
-    { ABT_T,  L"  FMA + shuffle + integer ALU параллельно.",
-              L"  FMA + shuffle + integer ALU in parallel." },
-    { ABT_T,  L"  Другие: чистый FMA = 2 порта из 5.",
-              L"  Others: pure FMA = 2 ports out of 5." },
-    { ABT_SP, L"", L"" },
-    { ABT_P,  L"✓ MCA capture — невидимые ECC ошибки",
-              L"✓ MCA capture — invisible ECC errors" },
-    { ABT_T,  L"  iMC корректирует bit-flip silently через ECC.",
-              L"  iMC silently corrects flips via ECC." },
-    { ABT_T,  L"  Pattern-тесты их в принципе не видят.",
-              L"  Pattern tests can't see them by design." },
-    { ABT_T,  L"  Мы читаем MCi_STATUS — diff до/после теста.",
-              L"  We read MCi_STATUS — diff before/after." },
-    { ABT_SP, L"", L"" },
-    { ABT_P,  L"✓ SPD через SMBus — S/N, дата, JEDEC ID",
-              L"✓ SPD via SMBus — S/N, date, JEDEC ID" },
-    { ABT_T,  L"  Прямое чтение SPD EEPROM с каждой планки.",
-              L"  Direct SPD EEPROM read from every DIMM." },
-    { ABT_T,  L"  Серийник + неделя/год производства.",
-              L"  Serial + week/year of manufacture." },
-    { ABT_T,  L"  memtest86+ free этого не имеет.",
-              L"  memtest86+ free doesn't have this." },
-    { ABT_SP, L"", L"" },
-    { ABT_P,  L"✓ Локализация ошибок (5 механизмов)",
-              L"✓ Error localization (5 mechanisms)" },
-    { ABT_T,  L"  1. Имя DIMM через SMBIOS Type 20",
-              L"  1. DIMM name via SMBIOS Type 20" },
-    { ABT_T,  L"  2. Stuck-bit (повтор XOR-маски)",
-              L"  2. Stuck-bit (XOR mask repetition)" },
-    { ABT_T,  L"  3. Stuck-row (DRAM coord heuristic)",
-              L"  3. Stuck-row (DRAM coord heuristic)" },
-    { ABT_T,  L"  4. Stuck-bank (DRAM coord heuristic)",
-              L"  4. Stuck-bank (DRAM coord heuristic)" },
-    { ABT_T,  L"  5. Гистограмма по 1ГБ диапазонам",
-              L"  5. Histogram by 1-GB ranges" },
-    { ABT_T,  L"  memtest86+: ничего. PassMark Pro: частично.",
-              L"  memtest86+: nothing. PassMark Pro: partial." },
+    /* ===== Section 3: режимы прогона ===== */
+    { ABT_H,  L"━ РЕЖИМЫ ПРОГОНА ━",
+              L"━ RUN MODES ━" },
+    { ABT_T,  L"Quick (~5 мин) — самые сильные тесты + Thermal Soak.",
+              L"Quick (~5 min) — strongest tests + Thermal Soak." },
+    { ABT_T,  L"Full (~30 мин) — все 14 тестов, один полный проход.",
+              L"Full (~30 min) — all 14 tests, one full pass." },
+    { ABT_T,  L"MultiPass — последовательно покрывает ВСЮ память,",
+              L"MultiPass — sequentially covers ALL RAM," },
+    { ABT_T,  L"  а не только тестовый буфер (~3 мин/ГБ).",
+              L"  not just the test buffer (~3 min/GB)." },
+    { ABT_T,  L"Marathon — крутить тесты 1-24 часа подряд для",
+              L"Marathon — cycle tests for 1-24 hours to" },
+    { ABT_T,  L"  отлова редких ошибок (раз в N часов).",
+              L"  surface very rare intermittent faults." },
     { ABT_SP, L"", L"" },
 
-    /* ===== Section 4: when to use a competitor (decision matrix) ===== */
-    { ABT_H,  L"━ КОГДА БРАТЬ КОНКУРЕНТА ━",
-              L"━ WHEN TO USE A COMPETITOR ━" },
-    { ABT_D,  L"Юр. отчёт о неисправности RAM:",
-              L"Legal RAM defect report:" },
-    { ABT_T,  L"  → PassMark MemTest86 Pro ($, заверен.)",
-              L"  → PassMark MemTest86 Pro (paid, certified)" },
+    /* ===== Section 4: умные функции ===== */
+    { ABT_H,  L"━ УМНЫЕ ФУНКЦИИ ━",
+              L"━ SMART FEATURES ━" },
+    { ABT_P,  L"✓ Авто-изоляция планок",
+              L"✓ Auto DIMM isolation" },
+    { ABT_T,  L"  Если ошибки в адресах нескольких планок —",
+              L"  If errors span multiple DIMM ranges —" },
+    { ABT_T,  L"  прога сама перепроверит каждую отдельно",
+              L"  re-tests each in isolation to give a" },
+    { ABT_T,  L"  и даст однозначный ответ \"ЗАМЕНИТЬ X\".",
+              L"  definitive \"REPLACE X\" answer." },
     { ABT_SP, L"", L"" },
-    { ABT_D,  L"DDR5 overclock-стабильность 24ч:",
-              L"DDR5 overclock stability 24h:" },
-    { ABT_T,  L"  → TM5 anta777 + y-cruncher (Windows)",
-              L"  → TM5 anta777 + y-cruncher (Windows)" },
+    { ABT_P,  L"✓ Чтение SPD планок",
+              L"✓ DIMM SPD read" },
+    { ABT_T,  L"  Серийник, неделя/год производства, тайминги,",
+              L"  Serial, manufacture week/year, timings," },
+    { ABT_T,  L"  производитель (для гарантийной замены).",
+              L"  manufacturer (for warranty replacement)." },
     { ABT_SP, L"", L"" },
-    { ABT_D,  L"Грубая ошибка за 5 мин на старом PC:",
-              L"Quick coarse error on an old PC:" },
-    { ABT_T,  L"  → memtest86+ (free, испытан временем)",
-              L"  → memtest86+ (free, battle-tested)" },
+    { ABT_P,  L"✓ MCA — невидимые аппаратные ошибки",
+              L"✓ MCA — invisible hardware errors" },
+    { ABT_T,  L"  На памяти с ECC контроллер тихо исправляет",
+              L"  On ECC memory the controller silently fixes" },
+    { ABT_T,  L"  одно-битные сбои — обычные тесты их не видят.",
+              L"  single-bit flips — normal tests can't see." },
+    { ABT_T,  L"  Мы их подсчитываем напрямую через регистры CPU.",
+              L"  We count them via CPU registers." },
     { ABT_SP, L"", L"" },
-    { ABT_P,  L"DDR5 шоп-приёмка, найти то что",
-              L"DDR5 shop intake, find what" },
-    { ABT_P,  L"memtest86+ пропустил:",
-              L"memtest86+ missed:" },
-    { ABT_T,  L"  → МЫ ✓ TRRespass + March-C- + Thermal Soak",
-              L"  → US ✓ TRRespass + March-C- + Thermal Soak" },
-    { ABT_T,  L"    вместе ловят то, что чистый memtest нет.",
-              L"    together catch what plain memtest can't." },
+    { ABT_P,  L"✓ Снимок состояния при каждой ошибке",
+              L"✓ Per-error environmental snapshot" },
+    { ABT_T,  L"  Темп / Вт / напряжение / тротлинг в момент сбоя.",
+              L"  Temp / W / voltage / throttle at error moment." },
+    { ABT_T,  L"  Видно: \"бит флипнул при 87°C на 1.23 В\".",
+              L"  Shows: \"bit flipped at 87°C / 1.23 V\"." },
+    { ABT_SP, L"", L"" },
+    { ABT_P,  L"✓ Сравнение с прошлым прогоном",
+              L"✓ Diff vs previous run" },
+    { ABT_T,  L"  Записываем краткую сводку в UEFI NVRAM.",
+              L"  Brief summary persisted to UEFI NVRAM." },
+    { ABT_T,  L"  При следующем запуске покажет дельты ошибок,",
+              L"  Next boot shows error/temp/BW deltas —" },
+    { ABT_T,  L"  температуры, пропускной — \"что изменилось\".",
+              L"  \"what changed since last test\"." },
+    { ABT_SP, L"", L"" },
+    { ABT_P,  L"✓ Подгон под турбо-режим",
+              L"✓ CPU pushed to turbo" },
+    { ABT_T,  L"  Поднимаем CPU до максимальной частоты на всех",
+              L"  Bumps CPU to max P-state on every core for" },
+    { ABT_T,  L"  ядрах для теплового стресса памяти.",
+              L"  proper thermal stress on the RAM." },
     { ABT_SP, L"", L"" },
 
-    /* ===== Section 6: report files ===== */
+    /* ===== Section 5: report files ===== */
     { ABT_H,  L"━ ОТЧЁТ ━",
               L"━ REPORT FILES ━" },
     { ABT_T,  L"После теста на USB рядом с loader.efi:",
               L"After test, on USB next to loader.efi:" },
-    { ABT_T,  L"  memforge2.log — полный лог прогона",
-              L"  memforge2.log — full run log" },
-    { ABT_T,  L"  report.json   — структурированные данные",
-              L"  report.json   — structured data" },
-    { ABT_T,  L"Включает: SPD (S/N/дата), MCA banks,",
-              L"Contains: SPD (S/N/date), MCA banks," },
-    { ABT_T,  L"DRAM coords, stuck-row/bank, гистограмму,",
-              L"DRAM coords, stuck-row/bank, histogram," },
-    { ABT_T,  L"errors[] с XOR-масками и адресами.",
-              L"errors[] with XOR masks and addresses." },
-    { ABT_T,  L"Готово для AI-анализа (Gemini/GPT/Claude).",
-              L"Ready for AI analysis (Gemini/GPT/Claude)." },
+    { ABT_T,  L"  memforge2.log  — полный лог прогона",
+              L"  memforge2.log  — full run log" },
+    { ABT_T,  L"  report.json    — структурированные данные",
+              L"  report.json    — structured data" },
+    { ABT_T,  L"Включает: SPD каждой планки, MCA-журнал,",
+              L"Contains: per-DIMM SPD, MCA log," },
+    { ABT_T,  L"найденные ошибки с адресами и состоянием системы",
+              L"errors with addresses and system state" },
+    { ABT_T,  L"на момент сбоя, гистограмму распределения.",
+              L"at moment of failure, address histogram." },
 };
 #define ABOUT_LINE_COUNT (sizeof(g_about_lines) / sizeof(g_about_lines[0]))
 
@@ -10697,7 +10669,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
         }
     }
 
-    log_line(L"=== MemForge2 v0.4.26 init ===");
+    log_line(L"=== MemForge2 v0.4.27 init ===");
     log_line(L"[WATCHDOG] UEFI 5-min watchdog disabled at app entry");
     /* Show splash IMMEDIATELY so the user sees the program is alive while
        INI parsing, SMBus probes and SMBIOS walk happen. Without this, the
@@ -10742,7 +10714,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
                 if (uefi_call_wrapper(g_gop->QueryMode, 4,
                                       g_gop, m, &info_sz, &info) != EFI_SUCCESS)
                     continue;
-                /* v0.4.26 — also log PixelFormat and PixelsPerScanLine
+                /* v0.4.27 — also log PixelFormat and PixelsPerScanLine
                    so we can see if a card (e.g. old Radeon HD 4350) only
                    offers BltOnly modes (PixelFormat=3) that prevent
                    direct-fb rendering. */
@@ -10757,7 +10729,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
             log_line(L"[GFX] NO GOP PROTOCOL FOUND — firmware has no UEFI graphics. "
                      L"Falling back to 800x600 default. UI will not render correctly.");
         }
-        /* v0.4.26 — MP Services Protocol diagnostic. Without this log it
+        /* v0.4.27 — MP Services Protocol diagnostic. Without this log it
            was impossible to tell from a field report whether multi-core
            dispatch failed (LocateProtocol error / GetNumberOfProcessors
            returned 1) or the test was simply running on a single-core
@@ -11359,7 +11331,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
             g_cards[i].errors = 0;
             card_paint(i);
 
-            /* v0.4.26 — countdown returns 0=start, 1=skip this test, 2=abort run */
+            /* v0.4.27 — countdown returns 0=start, 1=skip this test, 2=abort run */
             int cd_rc = countdown(2, i);
             if (cd_rc == 2) break;          /* Q → abort whole run */
             if (cd_rc == 1) {                /* ESC → skip this test */
@@ -11376,7 +11348,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
                 done_tests++;
                 continue;
             }
-            /* v0.4.26 — clear the countdown footer once the test starts.
+            /* v0.4.27 — clear the countdown footer once the test starts.
                The old "[N/14] Test starts in 2 sec ..." line would linger
                throughout the test run, taking up screen space without
                serving any purpose during the test itself. Replace with a
@@ -11402,8 +11374,8 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
                per-test results to survive that. Cheap (1× per test, not
                1× per log line). */
             flush_log_now();
-            /* v0.4.26 — ACCUMULATE across marathon passes, do not OVERWRITE.
-               Pre-v0.4.26 the line was `g_summary[i] = r;` which kept only
+            /* v0.4.27 — ACCUMULATE across marathon passes, do not OVERWRITE.
+               Pre-v0.4.27 the line was `g_summary[i] = r;` which kept only
                the LAST pass's per-test result. On a 16-hour marathon with
                an intermittent error rate of 1 per pass, that meant the
                final summary table showed "errors: 0" because the most
@@ -11490,7 +11462,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
         /* Persist this run's summary to NVRAM and log delta vs prev run.
            Lets a shop see across reboots whether the symptom reproduces. */
         hist_save_and_diff(total_ms);
-        /* v0.4.26 — auto-isolation: if errors are distributed across 2+
+        /* v0.4.27 — auto-isolation: if errors are distributed across 2+
            DIMMs on a block-mapped system, automatically run per-DIMM
            re-test BEFORE showing the verdict. No user key needed. The
            result screen becomes the verdict the user sees. */
@@ -11677,7 +11649,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
                         /* Cyrillic ш/Ш = same physical key as I on RU layout */
                         k.UnicodeChar == 0x0448 || k.UnicodeChar == 0x0428)
                        && g_iso_offer) {
-                /* v0.4.26 — auto-isolation: re-test each affected DIMM with
+                /* v0.4.27 — auto-isolation: re-test each affected DIMM with
                    TestOnlyDimm, give a definitive REPLACE answer. */
                 do_auto_isolation();
                 render_isolation_verdict();
