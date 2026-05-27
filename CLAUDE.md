@@ -5,6 +5,25 @@ fresh-context ones where conversation history was not carried over.
 
 ---
 
+## 0. Install git hooks at session start (one Bash call)
+
+The linewatch discipline below is enforced by a git `commit-msg` hook that
+blocks commits to tracked files unless `linewatch check` passes AND the
+commit message contains a `linewatch:` trailer. Hooks live in `.git/hooks/`
+which is per-clone (not committed). To activate them in any fresh clone
+or new session:
+
+```
+tools/install-hooks.sh
+```
+
+The script is idempotent — re-running just overwrites the destination with
+the current source. Run it as the first Bash command in every session that
+will edit code, before `tools/linewatch.sh begin`. If install-hooks was
+skipped, you can still get a clean commit by running `linewatch check`
+manually before commit and including the trailer — but the safety net is
+gone, so don't skip.
+
 ## 1. linewatch discipline (mandatory before any code edit)
 
 LLM-driven editing has a real failure mode: the Edit tool reports success
