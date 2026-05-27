@@ -1,5 +1,5 @@
 /*
- * MemForge2 v0.4.21 — UEFI memory tester written from scratch.
+ * MemForge2 v0.4.22 — UEFI memory tester written from scratch.
  *
  * Latest release: https://github.com/Paradoxdov/memforge/releases
  * For per-version changes see git log / GitHub Releases page.
@@ -834,7 +834,7 @@ static void init_splash(CHAR16 *stage) {
     cls();
     UINTN cy = g_h / 2;
     /* Title — large centered line. */
-    CHAR16 *title = L"MEMFORGE v0.4.21";
+    CHAR16 *title = L"MEMFORGE v0.4.22";
     UINTN tx = (g_w - StrLen(title) * g_char_w) / 2;
     gfx_draw_str_color(tx, cy - g_char_h * 2, title, COL_ACCENT_HI);
     /* Stage indicator — what we're doing right now. */
@@ -938,7 +938,7 @@ static UINTN g_card_cols = 1;
    compute_layout(). */
 static int g_show_cards = 1;
 
-/* v0.4.21 — focused cards layout for small screens (g_h < 900).
+/* v0.4.22 — focused cards layout for small screens (g_h < 900).
    Instead of one full-width row per test (14 rows × ~40 px = 560 px,
    which on a 1024×768 screen eats 70% of vertical space and clips the
    core panel + footer), we draw:
@@ -1008,7 +1008,7 @@ static void compute_layout(UINTN n_tests) {
     g_card_w = g_inner;
     g_card_row_h = g_compact ? g_char_h : (g_char_h + 16);
 
-    /* v0.4.21 — focused layout on small screens.
+    /* v0.4.22 — focused layout on small screens.
        On g_h<900 the per-test card list eats 60-70% of vertical space
        and clips the core panel / footer (YgrecK field report on 1024×768
        Radeon HD 4350). Replace with: 1-row strip of all test dots +
@@ -1197,8 +1197,8 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
         UINT32 limit_min   = g_cfg_marathon_hours * 60;
         UINT32 remain_min  = (limit_min > elapsed_min) ? (limit_min - elapsed_min) : 0;
         SPrint(pass_tag, sizeof(pass_tag),
-               T(L"МАРАФОН п%d  %d:%02d/%dч  ост %d:%02d",
-                 L"MARATHON p%d  %d:%02d/%dh  rem %d:%02d"),
+               T(L"МАРАФОН проход %d  %d:%02d/%dч  осталось %d:%02d",
+                 L"MARATHON pass %d  %d:%02d/%dh  remaining %d:%02d"),
                (UINT32)g_pass_idx_disp,
                elapsed_min / 60, elapsed_min % 60,
                g_cfg_marathon_hours,
@@ -1222,10 +1222,10 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
     UINTN cols = g_text_cols;
     if (cols >= 110) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.21   |   %ld.%ld ГБ RAM   |   %s   "
-                 L"|   %s   |   %02d:%02d   |   ост ~%02d:%02d   |   Тесты %d/%d",
-                 L"  MEMFORGE v0.4.21   |   %ld.%ld GB RAM   |   %s   "
-                 L"|   %s   |   %02d:%02d   |   ETA ~%02d:%02d   |   Tests %d/%d"),
+               T(L"  MEMFORGE v0.4.22   |   %ld.%ld ГБ RAM   |   %s   "
+                 L"|   %s   |   прошло %02d:%02d   |   осталось ~%02d:%02d   |   Тесты %d/%d",
+                 L"  MEMFORGE v0.4.22   |   %ld.%ld GB RAM   |   %s   "
+                 L"|   %s   |   elapsed %02d:%02d   |   ETA ~%02d:%02d   |   Tests %d/%d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
                err_tag,
@@ -1234,8 +1234,8 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
                (UINT32)done, (UINT32)total);
     } else if (cols >= 90) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.21   |   %ld.%ld ГБ RAM   |   %s   |   %s   |   %02d:%02d   |   ост ~%02d:%02d",
-                 L"  MEMFORGE v0.4.21   |   %ld.%ld GB RAM   |   %s   |   %s   |   %02d:%02d   |   ETA ~%02d:%02d"),
+               T(L"  MEMFORGE v0.4.22   |   %ld.%ld ГБ RAM   |   %s   |   %s   |   прошло %02d:%02d   |   осталось ~%02d:%02d",
+                 L"  MEMFORGE v0.4.22   |   %ld.%ld GB RAM   |   %s   |   %s   |   elapsed %02d:%02d   |   ETA ~%02d:%02d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
                err_tag,
@@ -1243,16 +1243,16 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
                eta_secs / 60, eta_secs % 60);
     } else if (cols >= 70) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.21  |  %ld.%ld ГБ RAM  |  %s  |  %s  |  %02d:%02d",
-                 L"  MEMFORGE v0.4.21  |  %ld.%ld GB RAM  |  %s  |  %s  |  %02d:%02d"),
+               T(L"  MEMFORGE v0.4.22  |  %ld.%ld ГБ RAM  |  %s  |  %s  |  прошло %02d:%02d",
+                 L"  MEMFORGE v0.4.22  |  %ld.%ld GB RAM  |  %s  |  %s  |  elapsed %02d:%02d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
                err_tag,
                secs / 60, secs % 60);
     } else {
         SPrint(buf, sizeof(buf),
-               T(L" MEMFORGE v0.4.21 | %s | %s | %02d:%02d",
-                 L" MEMFORGE v0.4.21 | %s | %s | %02d:%02d"),
+               T(L" MEMFORGE v0.4.22 | %s | %s | прошло %02d:%02d",
+                 L" MEMFORGE v0.4.22 | %s | %s | elapsed %02d:%02d"),
                pass_tag,
                err_tag,
                secs / 60, secs % 60);
@@ -1778,7 +1778,7 @@ static int dominant_dimm_idx(void) {
     return best;
 }
 
-/* v0.4.21 — detect dual-channel interleave ambiguity.
+/* v0.4.22 — detect dual-channel interleave ambiguity.
    On consumer desktops with dual/quad-channel memory, the iMC interleaves
    addresses between channels at 64-byte (cache-line) granularity. A
    SINGLE bad chip on one stick produces errors that, when mapped through
@@ -1787,7 +1787,7 @@ static int dominant_dimm_idx(void) {
 
    Field report from a Habr user (Netac DDR4 kit): same stuck bit
    D[53] was reported 24 times, distributed as A2 (8) + B2 (11) + ? (5).
-   Pre-v0.4.21 verdict confidently said "REPLACE: DDR4-B2 (HIGH)" — but
+   Pre-v0.4.22 verdict confidently said "REPLACE: DDR4-B2 (HIGH)" — but
    physically it's likely ONE bad chip on one of A2/B2, NOT both.
 
    This helper returns the list of DIMM indices that each hold >=25% of
@@ -1833,7 +1833,7 @@ static UINTN distributed_dimm_indices(int *out_idx, UINTN cap) {
     return n;
 }
 
-/* v0.4.21 — Approach D: detect whether SMBIOS Type 20 reports REAL
+/* v0.4.22 — Approach D: detect whether SMBIOS Type 20 reports REAL
    cache-line interleave (overlapping address ranges across DIMMs) or
    BLOCK mapping (disjoint ranges, each DIMM owns its own physical
    region). PassMark forum & KIT paper both confirm that even though
@@ -1877,7 +1877,7 @@ static UINT8 type20_max_interleave_depth(void) {
     return m;
 }
 
-/* v0.4.21 — Approach A: bit-6 polarity analysis of error addresses.
+/* v0.4.22 — Approach A: bit-6 polarity analysis of error addresses.
    On most Intel/AMD consumer dual-channel desktops with DDR4/DDR5, the
    iMC's channel selector is physical address bit 6 (alternating 64-byte
    cache lines between channels). If all error records share the same
@@ -4845,7 +4845,7 @@ static void amd_thermal_probe(void) {
 }
 
 static UINT32 amd_thermal_sample(void) {
-    /* v0.4.21 — correct decode per Linux k10temp / FreeBSD amdtemp.c:
+    /* v0.4.22 — correct decode per Linux k10temp / FreeBSD amdtemp.c:
        SMN 0x59800 (SMU_THM_TCON_CUR_TMP)
          bits [31:21]  raw temperature value (11 bits, mask 0x7FF)
          bit  19       TempRangeSel — when SET, scale is -49°C..+206°C
@@ -4853,7 +4853,7 @@ static UINT32 amd_thermal_sample(void) {
                        scale is 0..225°C (no offset).
        temp_c = (raw * 0.125) - (range_sel ? 49 : 0)
 
-       Pre-v0.4.21 code was missing both the 0x7FF mask AND the bit-19
+       Pre-v0.4.22 code was missing both the 0x7FF mask AND the bit-19
        range adjustment, which inflated readings by ~49°C on Ryzen SKUs
        that report on the -49..206 scale (most Renoir/Cezanne/Zen3+
        desktop parts). Field report on Ryzen 5 4500 showed Tctl=93°C at
@@ -6473,7 +6473,7 @@ static test_def_t g_tests[] = {
 };
 #define N_TESTS (sizeof(g_tests) / sizeof(g_tests[0]))
 
-/* v0.4.21 — map a kernel enum (KER_*) to its position in g_tests[].
+/* v0.4.22 — map a kernel enum (KER_*) to its position in g_tests[].
    CRITICAL: do NOT index g_tests[] directly by a kernel_id_t value.
    The enum values do not match array positions (e.g., KER_AVX2_SUSTAINED
    = 12 maps to position 0 in g_tests because AVX2 Sustained is the
@@ -6588,12 +6588,12 @@ static void render_activity_row(UINT64 elapsed_ms) {
         gfx_draw_str_color(0, 2 * g_char_h, buf, COL_ACCENT_HI);
     } else {
         SPrint(buf, sizeof(buf),
-               T(L"  %s  Тест: %s  ·  на этом тесте %d:%02d  ·  Ядра %d/%d  ·  AVX2 %s",
-                 L"  %s  Test: %s  ·  test elapsed %d:%02d  ·  Cores %d/%d  ·  AVX2 %s"),
+               T(L"  %s  Тест: %s  ·  идёт %d:%02d  ·  Ядра %d/%d использовано  ·  AVX2 %s",
+                 L"  %s  Test: %s  ·  running %d:%02d  ·  Cores %d/%d used  ·  AVX2 %s"),
                spin, cur_test_name,
                test_elapsed_s / 60, test_elapsed_s % 60,
                (UINT32)g_n_enabled, (UINT32)g_n_cores,
-               g_has_avx2 ? T(L"да", L"yes") : T(L"проп", L"skip"));
+               g_has_avx2 ? T(L"вкл", L"on") : T(L"нет", L"off"));
         say_at_rc(0, 2, buf);
     }
 }
@@ -6625,7 +6625,7 @@ typedef struct {
 } card_info_t;
 static card_info_t g_cards[N_TESTS];
 
-/* v0.4.21 — Forward decls for focused-mode helpers (defined below
+/* v0.4.22 — Forward decls for focused-mode helpers (defined below
    card_paint so they can share the same color-lookup logic). */
 static void card_paint_full(UINTN i);
 static void card_strip_paint(UINTN i);
@@ -6739,7 +6739,7 @@ static void card_paint_full(UINTN i) {
     }
 }
 
-/* ---------- Focused-mode card painters (v0.4.21) ---------- */
+/* ---------- Focused-mode card painters (v0.4.22) ---------- */
 
 /* Paint the small status dot for test i in the top strip. The strip is
    one row tall and shows N evenly-spaced dots, one per test. The dot
@@ -6821,12 +6821,27 @@ static void card_focused_paint(UINTN i) {
     blt_fill(ix, row2_y, iw, row_h, COL_PANEL);
     blt_fill(ix, row3_y, iw, row_h, COL_PANEL);
 
-    /* Row 1: test name (left) + index counter (right) */
+    /* Row 1: test name (left) + short description in dim color + index counter (right).
+       v0.4.22 — description lets non-expert user know what the test
+       actually checks (TRRespass / March-C- / Butterfly etc. are jargon). */
     say_at_px(ix + 4, row1_y, g_tests[i].name);
+    UINTN name_chars = StrLen(g_tests[i].name);
     CHAR16 idx_buf[32];
     SPrint(idx_buf, sizeof(idx_buf), L"[%d/%d]", (UINT32)(i + 1), (UINT32)N_TESTS);
     UINTN idx_chars = StrLen(idx_buf);
     UINTN idx_x = ix + iw - idx_chars * g_char_w - 4;
+    /* Insert description between name and [N/M] if there's room */
+    CHAR16 *desc = T(g_tests[i].desc_ru, g_tests[i].desc_en);
+    UINTN desc_x = ix + 4 + (name_chars + 3) * g_char_w;
+    UINTN desc_avail_chars = (idx_x > desc_x) ? (idx_x - desc_x) / g_char_w : 0;
+    if (desc && desc[0] && desc_avail_chars > 12) {
+        CHAR16 desc_clip[160];
+        UINTN n = 0;
+        for (; n < desc_avail_chars - 2 && n < 158 && desc[n]; n++)
+            desc_clip[n] = desc[n];
+        desc_clip[n] = 0;
+        gfx_draw_str_color(desc_x, row1_y, desc_clip, COL_DIM);
+    }
     say_at_px(idx_x, row1_y, idx_buf);
 
     /* Row 2: big progress bar spanning full inner width */
@@ -7158,7 +7173,7 @@ static void core_panel_init(void) {
         UINTN base_x = g_core_x + (g_core_w / cols) * col_idx;
         gfx_draw_str_color(base_x + c.x_label, hdr_y, T(L"Ядро",    L"Core"),  COL_DIM);
         gfx_draw_str_color(base_x + c.x_bar,   hdr_y, T(L"Активн.",  L"Bar"),   COL_DIM);
-        gfx_draw_str_color(base_x + c.x_pct,   hdr_y, T(L"C0 %",     L"C0 %"),  COL_DIM);
+        gfx_draw_str_color(base_x + c.x_pct,   hdr_y, T(L"Загрузка", L"Load%"), COL_DIM);
         if (c.x_temp)
             gfx_draw_str_color(base_x + c.x_temp,  hdr_y, T(L"Темп",  L"Temp"),  COL_DIM);
         if (c.x_freq)
@@ -7455,16 +7470,29 @@ static void drain_conin(void) {
     }
 }
 
+/* v0.4.22 — countdown UX rework.
+   Pre-v0.4.22: ESC meant "skip the wait and start the test now" — which
+   completely contradicts the universal "ESC = cancel" convention. Users
+   pressed ESC expecting "I don't want this test" and instead launched it.
+
+   New keybinds (consistent with how every other UI on the planet works):
+     ESC      → skip THIS test (continue to next)
+     Q        → abort the entire run
+     Enter/Space → start now (skip remaining wait — explicit "go" key)
+   Return value:
+     0 = normal flow, run the test
+     1 = ESC pressed, caller should skip this test
+     2 = Q pressed, g_aborted=1, caller should break the outer loop. */
 static int countdown(int seconds, UINTN test_idx) {
     UINTN row = g_foot_y / g_char_h;
     if (row >= g_text_rows) row = g_text_rows - 1;
     for (int s = seconds; s > 0; s--) {
-        if (g_aborted) return 1;
+        if (g_aborted) return 2;
         clear_row(row);
-        CHAR16 buf[160];
+        CHAR16 buf[180];
         SPrint(buf, sizeof(buf),
-               T(L"  [%d/%d] %s  старт через %d сек   (ESC = запустить, Q = отмена)",
-                 L"  [%d/%d] %s  starts in %d sec   (ESC = run now,  Q = abort)"),
+               T(L"  [%d/%d] %s  старт через %d сек   [Enter]=старт сейчас  [ESC]=пропустить тест  [Q]=отмена прогона",
+                 L"  [%d/%d] %s  starts in %d sec   [Enter]=start now  [ESC]=skip this test  [Q]=abort run"),
                (UINT32)(test_idx + 1), (UINT32)N_TESTS, g_tests[test_idx].name, s);
         say_at_rc(0, row, buf);
 
@@ -7478,10 +7506,15 @@ static int countdown(int seconds, UINTN test_idx) {
             EFI_INPUT_KEY k = { 0, 0 };
             EFI_STATUS rs = uefi_call_wrapper(ST->ConIn->ReadKeyStroke, 2, ST->ConIn, &k);
             if (rs != EFI_SUCCESS) continue;   /* spurious wake — k is garbage */
-            if (k.ScanCode == SCAN_ESC) return 1;
+            if (k.ScanCode == SCAN_ESC) return 1;       /* skip this test */
             if (k.UnicodeChar == L'q' || k.UnicodeChar == L'Q') {
-                g_aborted = 1; return 1;
+                g_aborted = 1; return 2;                 /* abort run */
             }
+            if (k.UnicodeChar == L'\r' || k.UnicodeChar == L'\n' ||
+                k.UnicodeChar == L' ') {
+                return 0;                                /* start now */
+            }
+            /* Any other key → ignore, continue counting down */
         }
     }
     return 0;
@@ -8077,7 +8110,7 @@ static void render_simple_verdict(UINT64 total_ms) {
         UINTN dist_n = distributed_dimm_indices(dist_idx, MAX_DIMMS);
         int is_distributed = (dist_n >= 2);
 
-        /* v0.4.21 — Approach D + A: classify WHY errors are distributed.
+        /* v0.4.22 — Approach D + A: classify WHY errors are distributed.
              type20_overlap = 1 → ranges overlap (real cache-line interleave)
                                   → "ONE chip behind two labels"
              type20_overlap = 0, depth ≤ 1 → block mode (disjoint ranges,
@@ -8363,8 +8396,8 @@ static void render_summary(UINT64 total_ms) {
     UINTN hrow = (g_hdr_h / 2 - g_char_h / 2) / g_char_h;
     CHAR16 buf[200];
     SPrint(buf, sizeof(buf),
-           T(L"  MEMFORGE v0.4.21 ИТОГИ   |   %d сек   |   Ядра %d/%d",
-             L"  MEMFORGE v0.4.21 SUMMARY   |   %d sec   |   Cores %d/%d"),
+           T(L"  MEMFORGE v0.4.22 ИТОГИ   |   %d сек   |   Ядра %d/%d",
+             L"  MEMFORGE v0.4.22 SUMMARY   |   %d sec   |   Cores %d/%d"),
            (UINT32)(total_ms / 1000),
            (UINT32)g_n_enabled, (UINT32)g_n_cores);
     say_at_rc(0, hrow, buf);
@@ -8446,7 +8479,7 @@ static void render_summary(UINT64 total_ms) {
                 CHAR16 chip[64] = L"";
                 if (didx >= 0)
                     chip_label_for_bit((UINT32)didx, bp, chip, 64);
-                /* v0.4.21 — use SMBIOS Type 17 locator string ("DDR4-B2")
+                /* v0.4.22 — use SMBIOS Type 17 locator string ("DDR4-B2")
                    instead of array-index-based "DIMM%d" which had nothing
                    to do with the physical slot label the user sees. */
                 CHAR8 *loc = (didx >= 0 && g_dimms[didx].locator[0])
@@ -8487,8 +8520,8 @@ static void render_summary(UINT64 total_ms) {
             if (sr_n >= 3) {
                 CHAR16 srb[200];
                 SPrint(srb, sizeof(srb),
-                       T(L"⚠ Подозр. строка ~0x%lx: %d ошибок в одной DRAM-строке (плохой row driver)",
-                         L"⚠ Suspect row ~0x%lx: %d errors in one DRAM row (bad row driver)"),
+                       T(L"⚠ Возможно битая строка памяти ~0x%lx: %d ошибок в одной DRAM-строке (~ = приблиз., точная схема чипсета не публикуется)",
+                         L"⚠ Possibly bad memory row ~0x%lx: %d errors in one DRAM row (~ = approximate; chipset hash not public)"),
                        sr, sr_n);
                 gfx_draw_str_color(3 * g_char_w, row * g_char_h, srb, COL_FAIL);
                 log_line(srb);
@@ -8499,8 +8532,8 @@ static void render_summary(UINT64 total_ms) {
             if (sb_n >= 3) {
                 CHAR16 sbb[200];
                 SPrint(sbb, sizeof(sbb),
-                       T(L"⚠ Подозр. банк ~bg=%d/bank=%d: %d ошибок в одном банке DRAM",
-                         L"⚠ Suspect bank ~bg=%d/bank=%d: %d errors in one DRAM bank"),
+                       T(L"⚠ Возможно повреждена секция чипа DRAM: банк-группа %d, банк %d — %d ошибок в одном банке (~ = приблиз.)",
+                         L"⚠ Possibly damaged DRAM chip section: bank-group %d, bank %d — %d errors in one bank (~ = approximate)"),
                        (sb_id >> 4) & 0xF, sb_id & 0xF, sb_n);
                 gfx_draw_str_color(3 * g_char_w, row * g_char_h, sbb, COL_FAIL);
                 log_line(sbb);
@@ -8553,7 +8586,8 @@ static void render_summary(UINT64 total_ms) {
         if (nbk > 0) {
             CHAR16 hist[220]; UINTN hp = 0;
             hp += SPrint(hist + hp, sizeof(hist) - hp * sizeof(CHAR16),
-                         T(L"Распределение: ", L"Address histogram: "));
+                         T(L"Карта ошибок по 1-ГБ участкам адресов (диапазон:N ошибок): ",
+                           L"Errors per 1-GB address range (range:N errors): "));
             for (UINT32 j = 0; j < nbk; j++) {
                 hp += SPrint(hist + hp, sizeof(hist) - hp * sizeof(CHAR16),
                              (j == 0) ? L"%d-%dG:%d" : L" · %d-%dG:%d",
@@ -10156,7 +10190,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
         }
     }
 
-    log_line(L"=== MemForge2 v0.4.21 init ===");
+    log_line(L"=== MemForge2 v0.4.22 init ===");
     log_line(L"[WATCHDOG] UEFI 5-min watchdog disabled at app entry");
     /* Show splash IMMEDIATELY so the user sees the program is alive while
        INI parsing, SMBus probes and SMBIOS walk happen. Without this, the
@@ -10201,7 +10235,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
                 if (uefi_call_wrapper(g_gop->QueryMode, 4,
                                       g_gop, m, &info_sz, &info) != EFI_SUCCESS)
                     continue;
-                /* v0.4.21 — also log PixelFormat and PixelsPerScanLine
+                /* v0.4.22 — also log PixelFormat and PixelsPerScanLine
                    so we can see if a card (e.g. old Radeon HD 4350) only
                    offers BltOnly modes (PixelFormat=3) that prevent
                    direct-fb rendering. */
@@ -10216,7 +10250,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
             log_line(L"[GFX] NO GOP PROTOCOL FOUND — firmware has no UEFI graphics. "
                      L"Falling back to 800x600 default. UI will not render correctly.");
         }
-        /* v0.4.21 — MP Services Protocol diagnostic. Without this log it
+        /* v0.4.22 — MP Services Protocol diagnostic. Without this log it
            was impossible to tell from a field report whether multi-core
            dispatch failed (LocateProtocol error / GetNumberOfProcessors
            returned 1) or the test was simply running on a single-core
@@ -10818,7 +10852,23 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
             g_cards[i].errors = 0;
             card_paint(i);
 
-            if (countdown(2, i) && g_aborted) break;
+            /* v0.4.22 — countdown returns 0=start, 1=skip this test, 2=abort run */
+            int cd_rc = countdown(2, i);
+            if (cd_rc == 2) break;          /* Q → abort whole run */
+            if (cd_rc == 1) {                /* ESC → skip this test */
+                SPrint(lb, sizeof(lb),
+                       L"[5.%d] %s -> SKIPPED (user pressed ESC during countdown)",
+                       (UINT32)i, g_tests[i].name);
+                log_line(lb);
+                g_summary[i].status = 0;
+                g_cards[i].state = CARD_SKIP;
+                g_cards[i].pct_x10 = 1000;
+                g_cards[i].mbs = 0;
+                g_cards[i].errors = 0;
+                card_paint(i);
+                done_tests++;
+                continue;
+            }
 
             SPrint(lb, sizeof(lb), L"[STEP 5.%d.B] Calling run_test_mc(%s)", (UINT32)i, g_tests[i].name);
             log_line(lb);
@@ -10831,8 +10881,8 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
                per-test results to survive that. Cheap (1× per test, not
                1× per log line). */
             flush_log_now();
-            /* v0.4.21 — ACCUMULATE across marathon passes, do not OVERWRITE.
-               Pre-v0.4.21 the line was `g_summary[i] = r;` which kept only
+            /* v0.4.22 — ACCUMULATE across marathon passes, do not OVERWRITE.
+               Pre-v0.4.22 the line was `g_summary[i] = r;` which kept only
                the LAST pass's per-test result. On a 16-hour marathon with
                an intermittent error rate of 1 per pass, that meant the
                final summary table showed "errors: 0" because the most
