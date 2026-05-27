@@ -839,7 +839,7 @@ static void init_splash(CHAR16 *stage) {
     cls();
     UINTN cy = g_h / 2;
     /* Title — large centered line. */
-    CHAR16 *title = L"MEMFORGE v0.4.18";
+    CHAR16 *title = L"MEMFORGE v0.4.19";
     UINTN tx = (g_w - StrLen(title) * g_char_w) / 2;
     gfx_draw_str_color(tx, cy - g_char_h * 2, title, COL_ACCENT_HI);
     /* Stage indicator — what we're doing right now. */
@@ -943,7 +943,7 @@ static UINTN g_card_cols = 1;
    compute_layout(). */
 static int g_show_cards = 1;
 
-/* v0.4.18 — focused cards layout for small screens (g_h < 900).
+/* v0.4.19 — focused cards layout for small screens (g_h < 900).
    Instead of one full-width row per test (14 rows × ~40 px = 560 px,
    which on a 1024×768 screen eats 70% of vertical space and clips the
    core panel + footer), we draw:
@@ -1013,7 +1013,7 @@ static void compute_layout(UINTN n_tests) {
     g_card_w = g_inner;
     g_card_row_h = g_compact ? g_char_h : (g_char_h + 16);
 
-    /* v0.4.18 — focused layout on small screens.
+    /* v0.4.19 — focused layout on small screens.
        On g_h<900 the per-test card list eats 60-70% of vertical space
        and clips the core panel / footer (YgrecK field report on 1024×768
        Radeon HD 4350). Replace with: 1-row strip of all test dots +
@@ -1227,9 +1227,9 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
     UINTN cols = g_text_cols;
     if (cols >= 110) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.18   |   %ld.%ld ГБ RAM   |   %s   "
+               T(L"  MEMFORGE v0.4.19   |   %ld.%ld ГБ RAM   |   %s   "
                  L"|   %s   |   %02d:%02d   |   ост ~%02d:%02d   |   Тесты %d/%d",
-                 L"  MEMFORGE v0.4.18   |   %ld.%ld GB RAM   |   %s   "
+                 L"  MEMFORGE v0.4.19   |   %ld.%ld GB RAM   |   %s   "
                  L"|   %s   |   %02d:%02d   |   ETA ~%02d:%02d   |   Tests %d/%d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
@@ -1239,8 +1239,8 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
                (UINT32)done, (UINT32)total);
     } else if (cols >= 90) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.18   |   %ld.%ld ГБ RAM   |   %s   |   %s   |   %02d:%02d   |   ост ~%02d:%02d",
-                 L"  MEMFORGE v0.4.18   |   %ld.%ld GB RAM   |   %s   |   %s   |   %02d:%02d   |   ETA ~%02d:%02d"),
+               T(L"  MEMFORGE v0.4.19   |   %ld.%ld ГБ RAM   |   %s   |   %s   |   %02d:%02d   |   ост ~%02d:%02d",
+                 L"  MEMFORGE v0.4.19   |   %ld.%ld GB RAM   |   %s   |   %s   |   %02d:%02d   |   ETA ~%02d:%02d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
                err_tag,
@@ -1248,16 +1248,16 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
                eta_secs / 60, eta_secs % 60);
     } else if (cols >= 70) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.18  |  %ld.%ld ГБ RAM  |  %s  |  %s  |  %02d:%02d",
-                 L"  MEMFORGE v0.4.18  |  %ld.%ld GB RAM  |  %s  |  %s  |  %02d:%02d"),
+               T(L"  MEMFORGE v0.4.19  |  %ld.%ld ГБ RAM  |  %s  |  %s  |  %02d:%02d",
+                 L"  MEMFORGE v0.4.19  |  %ld.%ld GB RAM  |  %s  |  %s  |  %02d:%02d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
                err_tag,
                secs / 60, secs % 60);
     } else {
         SPrint(buf, sizeof(buf),
-               T(L" MEMFORGE v0.4.18 | %s | %s | %02d:%02d",
-                 L" MEMFORGE v0.4.18 | %s | %s | %02d:%02d"),
+               T(L" MEMFORGE v0.4.19 | %s | %s | %02d:%02d",
+                 L" MEMFORGE v0.4.19 | %s | %s | %02d:%02d"),
                pass_tag,
                err_tag,
                secs / 60, secs % 60);
@@ -1635,7 +1635,8 @@ static void record_error(kernel_id_t test, UINT32 core,
 static int dimm_label_for_addr(UINT64 addr, CHAR16 *out, UINTN out_sz_chars) {
     out[0] = 0;
     if (g_dimm_map_count == 0 || g_dimm_count == 0) {
-        SPrint(out, out_sz_chars * sizeof(CHAR16), L"?");
+        SPrint(out, out_sz_chars * sizeof(CHAR16),
+               T(L"вне SMBIOS-карты", L"unmapped region"));
         return 0;
     }
     /* Collect all map entries whose address range contains this byte.
@@ -1651,7 +1652,8 @@ static int dimm_label_for_addr(UINT64 addr, CHAR16 *out, UINTN out_sz_chars) {
         }
     }
     if (n_match == 0) {
-        SPrint(out, out_sz_chars * sizeof(CHAR16), L"?");
+        SPrint(out, out_sz_chars * sizeof(CHAR16),
+               T(L"вне SMBIOS-карты", L"unmapped region"));
         return 0;
     }
     /* Resolve handles to locator strings. */
@@ -1664,14 +1666,14 @@ static int dimm_label_for_addr(UINT64 addr, CHAR16 *out, UINTN out_sz_chars) {
                 break;
             }
         }
-        if (!loc || !loc[0]) loc = (CHAR8 *)"?";
+        if (!loc || !loc[0]) loc = (CHAR8 *)(g_lang ? "unknown DIMM" : "планка без имени");
         pos += SPrint(out + pos, (out_sz_chars - pos) * sizeof(CHAR16),
                       (m == 0) ? L"%a" : L"+%a", loc);
         if (pos >= out_sz_chars - 16) break;
     }
     if (intl_depth > 1 && n_match > 1) {
         SPrint(out + pos, (out_sz_chars - pos) * sizeof(CHAR16),
-               L" (%d-way intl)", intl_depth);
+               T(L" (interleave %d×)", L" (%d-way intl)"), intl_depth);
     }
     return 1;
 }
@@ -1735,16 +1737,20 @@ static int chip_label_for_bit(UINT32 dimm_idx_0based, int bit_pos,
     dimm_info_t *d = &g_dimms[dimm_idx_0based];
     UINT8 dw = d->spd_device_width;
     if (dw != 4 && dw != 8 && dw != 16) {
-        /* SPD didn't tell us organization (most likely on HP Sure Start
-           or DDR5 where we couldn't read the full block). Show bit only. */
-        SPrint(out, out_chars * sizeof(CHAR16), L"bit %d (chip ?)", bit_pos);
+        /* SPD didn't expose chip organization — typically on DDR4 x4 modules
+           where the SPD width byte wasn't readable, or on systems where
+           we couldn't get the full SPD block. We can't map bit→chip.
+           Return empty (caller should branch and use a different sentence). */
+        out[0] = 0;
         return 0;
     }
-    /* Chip index 1-based: matches PCB silkscreen designation. */
+    /* Chip index 1-based: matches PCB silkscreen designation (U1..U8 / U1..U16). */
     UINT32 chip_idx = (UINT32)bit_pos / dw + 1;
     UINT32 within  = (UINT32)bit_pos % dw;
     SPrint(out, out_chars * sizeof(CHAR16),
-           L"chip U%d bit %d (x%d)", chip_idx, within, dw);
+           T(L"чип U%d (бит %d, ширина x%d)",
+             L"chip U%d (bit %d, width x%d)"),
+           chip_idx, within, dw);
     return 1;
 }
 
@@ -1777,7 +1783,7 @@ static int dominant_dimm_idx(void) {
     return best;
 }
 
-/* v0.4.18 — detect dual-channel interleave ambiguity.
+/* v0.4.19 — detect dual-channel interleave ambiguity.
    On consumer desktops with dual/quad-channel memory, the iMC interleaves
    addresses between channels at 64-byte (cache-line) granularity. A
    SINGLE bad chip on one stick produces errors that, when mapped through
@@ -1786,7 +1792,7 @@ static int dominant_dimm_idx(void) {
 
    Field report from a Habr user (Netac DDR4 kit): same stuck bit
    D[53] was reported 24 times, distributed as A2 (8) + B2 (11) + ? (5).
-   Pre-v0.4.18 verdict confidently said "REPLACE: DDR4-B2 (HIGH)" — but
+   Pre-v0.4.19 verdict confidently said "REPLACE: DDR4-B2 (HIGH)" — but
    physically it's likely ONE bad chip on one of A2/B2, NOT both.
 
    This helper returns the list of DIMM indices that each hold >=25% of
@@ -4768,7 +4774,7 @@ static void amd_thermal_probe(void) {
 }
 
 static UINT32 amd_thermal_sample(void) {
-    /* v0.4.18 — correct decode per Linux k10temp / FreeBSD amdtemp.c:
+    /* v0.4.19 — correct decode per Linux k10temp / FreeBSD amdtemp.c:
        SMN 0x59800 (SMU_THM_TCON_CUR_TMP)
          bits [31:21]  raw temperature value (11 bits, mask 0x7FF)
          bit  19       TempRangeSel — when SET, scale is -49°C..+206°C
@@ -4776,7 +4782,7 @@ static UINT32 amd_thermal_sample(void) {
                        scale is 0..225°C (no offset).
        temp_c = (raw * 0.125) - (range_sel ? 49 : 0)
 
-       Pre-v0.4.18 code was missing both the 0x7FF mask AND the bit-19
+       Pre-v0.4.19 code was missing both the 0x7FF mask AND the bit-19
        range adjustment, which inflated readings by ~49°C on Ryzen SKUs
        that report on the -49..206 scale (most Renoir/Cezanne/Zen3+
        desktop parts). Field report on Ryzen 5 4500 showed Tctl=93°C at
@@ -6528,7 +6534,7 @@ typedef struct {
 } card_info_t;
 static card_info_t g_cards[N_TESTS];
 
-/* v0.4.18 — Forward decls for focused-mode helpers (defined below
+/* v0.4.19 — Forward decls for focused-mode helpers (defined below
    card_paint so they can share the same color-lookup logic). */
 static void card_paint_full(UINTN i);
 static void card_strip_paint(UINTN i);
@@ -6642,7 +6648,7 @@ static void card_paint_full(UINTN i) {
     }
 }
 
-/* ---------- Focused-mode card painters (v0.4.18) ---------- */
+/* ---------- Focused-mode card painters (v0.4.19) ---------- */
 
 /* Paint the small status dot for test i in the top strip. The strip is
    one row tall and shows N evenly-spaced dots, one per test. The dot
@@ -7766,11 +7772,23 @@ static int verdict_describe_what_broke(CHAR16 *line1, UINTN cap1,
     int bp = single_bit_pos(stuck_x);
     if (stuck_n >= 5 && bp >= 0 && dominant_dimm_0based >= 0) {
         CHAR16 chip[64];
-        chip_label_for_bit((UINT32)dominant_dimm_0based, bp, chip, 64);
-        SPrint(line1, cap1,
-               T(L"• %s — бит %d застрял (%d ошибок этого типа)",
-                 L"• %s — bit %d stuck (%d errors of this type)"),
-               chip, bp, stuck_n);
+        int have_chip = chip_label_for_bit((UINT32)dominant_dimm_0based, bp, chip, 64);
+        if (have_chip) {
+            /* SPD told us chip width → can name the exact chip on PCB */
+            SPrint(line1, cap1,
+                   T(L"● Дохлая ячейка: %s — биту %d стуковое значение (%d ошибок этого типа)",
+                     L"● Dead cell: %s — bit %d stuck (%d errors of this type)"),
+                   chip, bp, stuck_n);
+        } else {
+            /* SPD didn't expose chip width (typical for DDR4 x4 / некоторые DDR5)
+               — we know which bit, just not which physical chip on the PCB */
+            SPrint(line1, cap1,
+                   T(L"● Стуковый бит D[%d] на планке (%d ошибок). "
+                     L"SPD не сообщил ширину чипа — точный U-номер чипа не определить.",
+                     L"● Stuck bit D[%d] on DIMM (%d errors). "
+                     L"SPD did not expose chip width — exact chip U-number unknown."),
+                   bp, stuck_n);
+        }
         n++;
     }
 
@@ -7780,8 +7798,8 @@ static int verdict_describe_what_broke(CHAR16 *line1, UINTN cap1,
         CHAR16 *target = (n == 0) ? line1 : line2;
         UINTN cap = (n == 0) ? cap1 : cap2;
         SPrint(target, cap,
-               T(L"• Повреждён ряд ячеек ~0x%lx (%d ошибок в одном ряду)",
-                 L"• Damaged cell row ~0x%lx (%d errors in same row)"),
+               T(L"● Повреждён ряд ячеек ~0x%lx (%d ошибок в одном ряду)",
+                 L"● Damaged cell row ~0x%lx (%d errors in same row)"),
                srow, srow_n);
         n++;
         if (n >= 2) return n;
@@ -7793,8 +7811,8 @@ static int verdict_describe_what_broke(CHAR16 *line1, UINTN cap1,
         CHAR16 *target = (n == 0) ? line1 : line2;
         UINTN cap = (n == 0) ? cap1 : cap2;
         SPrint(target, cap,
-               T(L"• Повреждена секция памяти (bank-group %d / bank %d, %d ошибок)",
-                 L"• Damaged memory bank (bank-group %d / bank %d, %d errors)"),
+               T(L"● Повреждена секция памяти (банк-группа %d / банк %d, %d ошибок)",
+                 L"● Damaged memory bank (bank-group %d / bank %d, %d errors)"),
                (sbank >> 4) & 0xF, sbank & 0xF, sbank_n);
         n++;
         if (n >= 2) return n;
@@ -7803,8 +7821,8 @@ static int verdict_describe_what_broke(CHAR16 *line1, UINTN cap1,
     /* Fallback when no clear pattern — say total error count + dominant DIMM */
     if (n == 0) {
         SPrint(line1, cap1,
-               T(L"• %ld ошибок памяти без чёткой локализации",
-                 L"• %ld memory errors without a clear pattern"),
+               T(L"● %ld ошибок памяти без чёткой локализации",
+                 L"● %ld memory errors without a clear pattern"),
                (UINT64)g_err_count);
     }
     return n;
@@ -7964,7 +7982,7 @@ static void render_simple_verdict(UINT64 total_ms) {
         }
     } else { /* VERDICT_FAIL */
         int didx = dominant_dimm_idx();
-        /* v0.4.18 — interleave detection.
+        /* v0.4.19 — interleave detection.
            If errors are distributed across 2+ DIMMs (typical dual-channel
            interleave hiding a single bad chip behind two DIMM labels),
            we MUST NOT confidently name one DIMM. Verdict instead tells
@@ -8187,8 +8205,8 @@ static void render_summary(UINT64 total_ms) {
     UINTN hrow = (g_hdr_h / 2 - g_char_h / 2) / g_char_h;
     CHAR16 buf[200];
     SPrint(buf, sizeof(buf),
-           T(L"  MEMFORGE v0.4.18 ИТОГИ   |   %d сек   |   Ядра %d/%d",
-             L"  MEMFORGE v0.4.18 SUMMARY   |   %d sec   |   Cores %d/%d"),
+           T(L"  MEMFORGE v0.4.19 ИТОГИ   |   %d сек   |   Ядра %d/%d",
+             L"  MEMFORGE v0.4.19 SUMMARY   |   %d sec   |   Cores %d/%d"),
            (UINT32)(total_ms / 1000),
            (UINT32)g_n_enabled, (UINT32)g_n_cores);
     say_at_rc(0, hrow, buf);
@@ -8271,15 +8289,22 @@ static void render_summary(UINT64 total_ms) {
                 if (didx >= 0)
                     chip_label_for_bit((UINT32)didx, bp, chip, 64);
                 if (didx >= 0 && chip[0]) {
+                    /* Full info: DIMM + exact chip designator */
                     SPrint(sb, sizeof(sb),
-                           T(L"⚠ Застрял бит D[%d] → DIMM%d %s: %d ошибок",
-                             L"⚠ Stuck bit D[%d] → DIMM%d %s: %d errors"),
+                           T(L"⚠ Застрял бит D[%d] → DIMM%d, %s: %d ошибок",
+                             L"⚠ Stuck bit D[%d] → DIMM%d, %s: %d errors"),
                            bp, didx + 1, chip, stuck_n);
+                } else if (didx >= 0) {
+                    /* DIMM known, exact chip not — say so plainly */
+                    SPrint(sb, sizeof(sb),
+                           T(L"⚠ Застрял бит D[%d] → DIMM%d (точный чип не определён по SPD): %d ошибок",
+                             L"⚠ Stuck bit D[%d] → DIMM%d (exact chip unknown per SPD): %d errors"),
+                           bp, didx + 1, stuck_n);
                 } else {
                     SPrint(sb, sizeof(sb),
-                           T(L"⚠ Застрял бит D[%d]: %d ошибок с XOR=0x%016lx",
-                             L"⚠ Stuck bit D[%d]: %d errors with XOR=0x%016lx"),
-                           bp, stuck_n, stuck_x);
+                           T(L"⚠ Застрял бит D[%d] (планку определить не удалось): %d ошибок",
+                             L"⚠ Stuck bit D[%d] (DIMM could not be identified): %d errors"),
+                           bp, stuck_n);
                 }
             } else {
                 SPrint(sb, sizeof(sb),
@@ -8321,9 +8346,9 @@ static void render_summary(UINT64 total_ms) {
         }
 
         /* (2) Affected-DIMM list (from SMBIOS Type 20 mapping). */
-        CHAR16 dimm_line[220]; UINTN pos = 0;
+        CHAR16 dimm_line[260]; UINTN pos = 0;
         pos += SPrint(dimm_line + pos, sizeof(dimm_line) - pos * sizeof(CHAR16),
-                      T(L"Затронуто: ", L"Affected DIMMs: "));
+                      T(L"Ошибки по планкам: ", L"Errors by DIMM: "));
         /* Aggregate: tally errors per distinct DIMM-label string. */
         CHAR16 labels[8][64]; UINT32 lcount[8] = {0}; UINT32 nl = 0;
         UINT32 shown = g_err_count > MAX_ERR_RECORDS ? MAX_ERR_RECORDS : g_err_count;
@@ -9968,7 +9993,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
         }
     }
 
-    log_line(L"=== MemForge2 v0.4.18 init ===");
+    log_line(L"=== MemForge2 v0.4.19 init ===");
     log_line(L"[WATCHDOG] UEFI 5-min watchdog disabled at app entry");
     /* Show splash IMMEDIATELY so the user sees the program is alive while
        INI parsing, SMBus probes and SMBIOS walk happen. Without this, the
@@ -10013,7 +10038,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
                 if (uefi_call_wrapper(g_gop->QueryMode, 4,
                                       g_gop, m, &info_sz, &info) != EFI_SUCCESS)
                     continue;
-                /* v0.4.18 — also log PixelFormat and PixelsPerScanLine
+                /* v0.4.19 — also log PixelFormat and PixelsPerScanLine
                    so we can see if a card (e.g. old Radeon HD 4350) only
                    offers BltOnly modes (PixelFormat=3) that prevent
                    direct-fb rendering. */
@@ -10028,7 +10053,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
             log_line(L"[GFX] NO GOP PROTOCOL FOUND — firmware has no UEFI graphics. "
                      L"Falling back to 800x600 default. UI will not render correctly.");
         }
-        /* v0.4.18 — MP Services Protocol diagnostic. Without this log it
+        /* v0.4.19 — MP Services Protocol diagnostic. Without this log it
            was impossible to tell from a field report whether multi-core
            dispatch failed (LocateProtocol error / GetNumberOfProcessors
            returned 1) or the test was simply running on a single-core
