@@ -1,5 +1,5 @@
 /*
- * MemForge2 v0.4.46 — UEFI memory tester written from scratch.
+ * MemForge2 v0.4.47 — UEFI memory tester written from scratch.
  *
  * Latest release: https://github.com/Paradoxdov/memforge/releases
  * For per-version changes see git log / GitHub Releases page.
@@ -21,7 +21,7 @@ static UINT64 get_total_ram_mb_from_efi_map(void);
 /* Abort flag (set by check_abort_key when user presses ESC/Q). Volatile so
    AP cores see updates from BSP without a memory barrier. */
 extern volatile int g_aborted;
-/* v0.4.46 — soft deadline flag. The BSP sets this when a timed kernel
+/* v0.4.47 — soft deadline flag. The BSP sets this when a timed kernel
    (Thermal Soak / BW Soak) overruns its intended duration + grace because
    one or more APs failed to exit on their own (observed on a dual-CCD
    Ryzen 9 7900X where BW Soak ran 27 min instead of 5). Timed kernels
@@ -237,6 +237,12 @@ static UINTN g_w = 0, g_h = 0;
 static EFI_FILE_PROTOCOL *g_logfile = NULL;
 static EFI_FILE_PROTOCOL *g_logroot = NULL;  /* kept open for report.json */
 static UINTN g_n_cores = 1, g_n_enabled = 1;
+/* v0.4.47 — SMT topology. g_smt_sibling[i]=1 if logical core i is a secondary
+   thread of its physical core (EFI_PROCESSOR_INFORMATION.Location.Thread != 0).
+   Used to run BW Soak one-thread-per-physical-core (NT-store siblings starve
+   each other). g_smt_have_topology=0 => unknown => treat all as primary. */
+static UINT8 g_smt_sibling[MAX_CORES] = {0};
+static int   g_smt_have_topology = 0;
 
 /* Language: 0 = Russian, 1 = English (default). Toggled via L key in menu
    OR overridden by [Meta] Language=ru/en in quantai.ini. */
@@ -423,7 +429,7 @@ static int    g_cfg_buffer_cap_explicit = 0;  /* user set BufferMB in INI? */
    physically removing the others. Set via [Run] TestOnlyDimm=N. */
 static UINT32 g_cfg_test_only_dimm = 0;     /* 0 = all DIMMs (default) */
 
-/* v0.4.46 — auto-isolation state.
+/* v0.4.47 — auto-isolation state.
    When the post-test verdict detects "errors on multiple DIMMs, block-
    mapped Type 20" we offer the user [I] to automatically re-test each
    affected DIMM with TestOnlyDimm in turn, giving a definitive
@@ -451,7 +457,7 @@ static UINT32 g_iso_kernel = 0;   /* kernel_id_t — that found errors (UINT32 s
    When enabled, MultiPass iterator wraps when exhausted (we re-cover the
    whole RAM range again) and the pass counter keeps incrementing. */
 static UINT32 g_cfg_marathon_hours = 0;
-/* v0.4.46 — hardware watchdog (seconds). The BSP re-arms ("kicks") this at
+/* v0.4.47 — hardware watchdog (seconds). The BSP re-arms ("kicks") this at
    every render tick and spin-poll iteration while a test runs. If the BSP
    itself wedges inside a kernel — e.g. a machine-check-class fault on bad RAM,
    which froze an i7-4790S inside AVX2 on one specific 1 GB region — it stops
@@ -879,7 +885,7 @@ static void init_splash(CHAR16 *stage) {
     cls();
     UINTN cy = g_h / 2;
     /* Title — large centered line. */
-    CHAR16 *title = L"MEMFORGE v0.4.46";
+    CHAR16 *title = L"MEMFORGE v0.4.47";
     UINTN tx = (g_w - StrLen(title) * g_char_w) / 2;
     gfx_draw_str_color(tx, cy - g_char_h * 2, title, COL_ACCENT_HI);
     /* Stage indicator — what we're doing right now. */
@@ -983,7 +989,7 @@ static UINTN g_card_cols = 1;
    compute_layout(). */
 static int g_show_cards = 1;
 
-/* v0.4.46 — focused cards layout for small screens (g_h < 900).
+/* v0.4.47 — focused cards layout for small screens (g_h < 900).
    Instead of one full-width row per test (14 rows × ~40 px = 560 px,
    which on a 1024×768 screen eats 70% of vertical space and clips the
    core panel + footer), we draw:
@@ -1053,7 +1059,7 @@ static void compute_layout(UINTN n_tests) {
     g_card_w = g_inner;
     g_card_row_h = g_compact ? g_char_h : (g_char_h + 16);
 
-    /* v0.4.46 — focused layout on small screens.
+    /* v0.4.47 — focused layout on small screens.
        On g_h<900 the per-test card list eats 60-70% of vertical space
        and clips the core panel / footer (YgrecK field report on 1024×768
        Radeon HD 4350). Replace with: 1-row strip of all test dots +
@@ -1267,9 +1273,9 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
     UINTN cols = g_text_cols;
     if (cols >= 110) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.46   |   %ld.%ld ГБ RAM   |   %s   "
+               T(L"  MEMFORGE v0.4.47   |   %ld.%ld ГБ RAM   |   %s   "
                  L"|   %s   |   прошло %02d:%02d   |   осталось ~%02d:%02d   |   Тесты %d/%d",
-                 L"  MEMFORGE v0.4.46   |   %ld.%ld GB RAM   |   %s   "
+                 L"  MEMFORGE v0.4.47   |   %ld.%ld GB RAM   |   %s   "
                  L"|   %s   |   elapsed %02d:%02d   |   ETA ~%02d:%02d   |   Tests %d/%d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
@@ -1279,8 +1285,8 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
                (UINT32)done, (UINT32)total);
     } else if (cols >= 90) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.46   |   %ld.%ld ГБ RAM   |   %s   |   %s   |   прошло %02d:%02d   |   осталось ~%02d:%02d",
-                 L"  MEMFORGE v0.4.46   |   %ld.%ld GB RAM   |   %s   |   %s   |   elapsed %02d:%02d   |   ETA ~%02d:%02d"),
+               T(L"  MEMFORGE v0.4.47   |   %ld.%ld ГБ RAM   |   %s   |   %s   |   прошло %02d:%02d   |   осталось ~%02d:%02d",
+                 L"  MEMFORGE v0.4.47   |   %ld.%ld GB RAM   |   %s   |   %s   |   elapsed %02d:%02d   |   ETA ~%02d:%02d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
                err_tag,
@@ -1288,16 +1294,16 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
                eta_secs / 60, eta_secs % 60);
     } else if (cols >= 70) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.46  |  %ld.%ld ГБ RAM  |  %s  |  %s  |  прошло %02d:%02d",
-                 L"  MEMFORGE v0.4.46  |  %ld.%ld GB RAM  |  %s  |  %s  |  elapsed %02d:%02d"),
+               T(L"  MEMFORGE v0.4.47  |  %ld.%ld ГБ RAM  |  %s  |  %s  |  прошло %02d:%02d",
+                 L"  MEMFORGE v0.4.47  |  %ld.%ld GB RAM  |  %s  |  %s  |  elapsed %02d:%02d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
                err_tag,
                secs / 60, secs % 60);
     } else {
         SPrint(buf, sizeof(buf),
-               T(L" MEMFORGE v0.4.46 | %s | %s | прошло %02d:%02d",
-                 L" MEMFORGE v0.4.46 | %s | %s | elapsed %02d:%02d"),
+               T(L" MEMFORGE v0.4.47 | %s | %s | прошло %02d:%02d",
+                 L" MEMFORGE v0.4.47 | %s | %s | elapsed %02d:%02d"),
                pass_tag,
                err_tag,
                secs / 60, secs % 60);
@@ -1631,14 +1637,14 @@ typedef struct {
 static err_record_t g_err_records[MAX_ERR_RECORDS];
 static volatile UINT32 g_err_count = 0;
 static volatile UINT32 g_cur_pass  = 0;
-/* v0.4.46 — per-DIMM error tally across the ENTIRE run. g_err_records caps at
+/* v0.4.47 — per-DIMM error tally across the ENTIRE run. g_err_records caps at
    32, and on a multipass run those 32 fill up in whatever region is tested
    FIRST — so the old localization went blind to DIMMs tested later (a moved
    stick in a late-tested slot looked clean). This counter is bumped for EVERY
    error, so the verdict reflects the true per-DIMM split. */
 static volatile UINT32 g_dimm_err_count[MAX_DIMMS] = {0};
 
-/* v0.4.46 — which DIMMs were actually exercised this run (their test chunk
+/* v0.4.47 — which DIMMs were actually exercised this run (their test chunk
    allocated and ran). A DIMM with 0 errors but g_dimm_tested==0 is "untested",
    NOT "clean" — the attribution classifier must not treat it as separable. */
 static volatile UINT8 g_dimm_tested[MAX_DIMMS] = {0};
@@ -1653,7 +1659,7 @@ static void record_error(kernel_id_t test, UINT32 core,
                           UINT64 addr, UINT64 exp, UINT64 act) {
     /* Atomic increment + bound check. lock xadd on x86_64. */
     UINT32 idx = __sync_fetch_and_add(&g_err_count, 1);
-    /* v0.4.46 — tally per DIMM for EVERY error (not only the 32 stored below).
+    /* v0.4.47 — tally per DIMM for EVERY error (not only the 32 stored below).
        Increment EVERY DIMM whose Type-20 range covers this address: on block-
        mapped RAM that's exactly one DIMM; on cache-line interleave the ranges
        overlap, so BOTH sticks of the pair get counted — which lets the verdict
@@ -1825,7 +1831,7 @@ static int chip_label_for_bit(UINT32 dimm_idx_0based, int bit_pos,
    we don't have the index back. Easier: re-derive from address via
    g_dimm_map[]. Returns -1 if not determinable. */
 static int dominant_dimm_idx(void) {
-    /* v0.4.46 — pick the DIMM with the most errors across the WHOLE run.
+    /* v0.4.47 — pick the DIMM with the most errors across the WHOLE run.
        g_dimm_err_count counts EVERY error (not just the first 32 captured),
        so this no longer goes blind to a DIMM tested late in a multipass run. */
     if (g_err_count == 0 || g_dimm_count == 0 || g_dimm_map_count == 0) return -1;
@@ -1836,7 +1842,7 @@ static int dominant_dimm_idx(void) {
     return best;
 }
 
-/* v0.4.46 — detect dual-channel interleave ambiguity.
+/* v0.4.47 — detect dual-channel interleave ambiguity.
    On consumer desktops with dual/quad-channel memory, the iMC interleaves
    addresses between channels at 64-byte (cache-line) granularity. A
    SINGLE bad chip on one stick produces errors that, when mapped through
@@ -1845,7 +1851,7 @@ static int dominant_dimm_idx(void) {
 
    Field report from a Habr user (Netac DDR4 kit): same stuck bit
    D[53] was reported 24 times, distributed as A2 (8) + B2 (11) + ? (5).
-   Pre-v0.4.46 verdict confidently said "REPLACE: DDR4-B2 (HIGH)" — but
+   Pre-v0.4.47 verdict confidently said "REPLACE: DDR4-B2 (HIGH)" — but
    physically it's likely ONE bad chip on one of A2/B2, NOT both.
 
    This helper returns the list of DIMM indices that each hold >=25% of
@@ -1854,7 +1860,7 @@ static int dominant_dimm_idx(void) {
    pick one — it should tell the user "one of these N — swap to isolate".
    Returns count written into out_idx[] (0..cap).                       */
 static UINTN distributed_dimm_indices(int *out_idx, UINTN cap) {
-    /* v0.4.46 — use the true per-DIMM totals (every error), not the first 32. */
+    /* v0.4.47 — use the true per-DIMM totals (every error), not the first 32. */
     if (g_err_count == 0 || g_dimm_count == 0 || g_dimm_map_count == 0) return 0;
     UINT32 total_localized = 0;
     for (UINT32 j = 0; j < g_dimm_count && j < MAX_DIMMS; j++)
@@ -1872,7 +1878,7 @@ static UINTN distributed_dimm_indices(int *out_idx, UINTN cap) {
     return n;
 }
 
-/* v0.4.46 — mark every DIMM whose Type-20 range intersects [base, base+size)
+/* v0.4.47 — mark every DIMM whose Type-20 range intersects [base, base+size)
    as exercised this run. Mirrors record_error's coverage logic so "tested"
    means the same thing as "errors could have been attributed here". */
 static void mark_dimms_tested(UINT64 base, UINT64 size) {
@@ -1888,7 +1894,7 @@ static void mark_dimms_tested(UINT64 base, UINT64 size) {
     }
 }
 
-/* v0.4.46 — how much to trust "blame DIMM X". Decided from the OBSERVED error
+/* v0.4.47 — how much to trust "blame DIMM X". Decided from the OBSERVED error
    distribution, NOT from SMBIOS interleave fields (BIOS fills them wrong) and
    NOT from argmax (an evenly-interleaved fault lights up every DIMM with
    millions, so "the biggest one" would falsely read as separable).
@@ -1923,7 +1929,7 @@ static attr_class_t attribution_classify(int *hot_idx) {
     return ATTR_RELIABLE;
 }
 
-/* v0.4.46 — Approach D: detect whether SMBIOS Type 20 reports REAL
+/* v0.4.47 — Approach D: detect whether SMBIOS Type 20 reports REAL
    cache-line interleave (overlapping address ranges across DIMMs) or
    BLOCK mapping (disjoint ranges, each DIMM owns its own physical
    region). PassMark forum & KIT paper both confirm that even though
@@ -1967,7 +1973,7 @@ static UINT8 type20_max_interleave_depth(void) {
     return m;
 }
 
-/* v0.4.46 — Approach A: bit-6 polarity analysis of error addresses.
+/* v0.4.47 — Approach A: bit-6 polarity analysis of error addresses.
    On most Intel/AMD consumer dual-channel desktops with DDR4/DDR5, the
    iMC's channel selector is physical address bit 6 (alternating 64-byte
    cache lines between channels). If all error records share the same
@@ -3625,6 +3631,10 @@ static void run_bw_soak(ap_arg_t *a) {
     }
     UINT64 e = 0;
     UINTN n = a->n_qwords;
+    /* v0.4.47 — n==0 would make the write-asm `dec cnt; jnz` underflow 0 -> 2^64
+       and stream forever (hard hang). The physical-cores-only BW Soak parks SMT
+       siblings with n_qwords=0, so guard it here too as defence-in-depth. */
+    if (!n) { a->progress = 1000; a->errors = 0; a->bytes = 0; return; }
     UINTN n32 = n / 4;
     UINTN step = n / PROGRESS_GRAIN; if (!step) step = n;
     UINT64 pat[4] = { 0xDEADBEEFCAFEBABEULL, 0x0123456789ABCDEFULL,
@@ -3636,20 +3646,28 @@ static void run_bw_soak(ap_arg_t *a) {
     while (ms_now() - t_start < duration && !g_aborted && !g_force_kernel_exit) {
         /* Streaming write: vmovntdq bypasses cache → every store goes
            straight to DRAM through the write-combining buffers.
-           Maximises memory controller activity. sfence flushes WC. */
+           Maximises memory controller activity. sfence flushes WC.
+           v0.4.47 — chunked (~1 MB) so the deadline flag is checked mid-write:
+           a slow core (e.g. a bandwidth-starved SMT sibling) can BAIL instead of
+           being force-killed. The raw asm loop is otherwise non-interruptible. */
         UINT64 *dst = a->base;
-        UINTN cnt = n32;
-        __asm__ __volatile__(
-            "vmovdqu (%[pat]), %%ymm0\n\t"
-            "1: vmovntdq %%ymm0, (%[dst])\n\t"
-            "   add $32, %[dst]\n\t"
-            "   dec %[cnt]\n\t"
-            "   jnz 1b\n\t"
-            "sfence\n\t"
-            "vzeroupper\n\t"
-            : [dst] "+r"(dst), [cnt] "+r"(cnt)
-            : [pat] "r"(pat)
-            : "ymm0", "memory", "cc");
+        UINTN remaining = n32;
+        while (remaining) {
+            UINTN cnt = remaining > 32768 ? 32768 : remaining;
+            remaining -= cnt;
+            __asm__ __volatile__(
+                "vmovdqu (%[pat]), %%ymm0\n\t"
+                "1: vmovntdq %%ymm0, (%[dst])\n\t"
+                "   add $32, %[dst]\n\t"
+                "   dec %[cnt]\n\t"
+                "   jnz 1b\n\t"
+                "sfence\n\t"
+                "vzeroupper\n\t"
+                : [dst] "+r"(dst), [cnt] "+r"(cnt)
+                : [pat] "r"(pat)
+                : "ymm0", "memory", "cc");
+            if (g_aborted || g_force_kernel_exit) goto bw_done;
+        }
         a->bytes += (UINT64)n * 8;
 
         /* Read+verify pass. The buffer was streamed (write-combined +
@@ -3906,7 +3924,7 @@ static int try_enable_avx_state(void) {
    logical CPU and not just the BSP. */
 static volatile UINT32 g_hwp_ok_count   = 0;
 static volatile UINT32 g_hwp_fail_count = 0;
-/* v0.4.46 — count APs that took the legacy PERF_CTL (0x199) path
+/* v0.4.47 — count APs that took the legacy PERF_CTL (0x199) path
    instead of HWP. Lets the [PERF] summary distinguish "HWP failed
    silently" from "this is pre-Skylake, we used the right legacy MSR". */
 static volatile UINT32 g_legacy_turbo_count = 0;
@@ -4048,7 +4066,7 @@ static UINT32 try_enable_max_perf(void) {
     }
     if (turbo_ratio > 0) {
         wrmsr_safe(0x199, ((UINT64)turbo_ratio) << 8);
-        /* v0.4.46 — bump the legacy-turbo counter so the per-run [PERF]
+        /* v0.4.47 — bump the legacy-turbo counter so the per-run [PERF]
            summary can honestly say "OK via legacy PERF_CTL on N cores"
            instead of leaving us with OK=0 FAIL=0 which looks like nothing
            was done. */
@@ -4605,7 +4623,7 @@ typedef struct {
     UINT32 total_ram_mb;
     UINT32 mca_new_errors;
     UINT32 cpu_vendor;          /* 1=Intel, 2=AMD, 0=unknown */
-    /* v0.4.46 — socket-vs-stick tracking. Repurposed from reserved[]; an old
+    /* v0.4.47 — socket-vs-stick tracking. Repurposed from reserved[]; an old
        record reads these as 0 (= "no info"), so this is backward-compatible
        both ways and needs no schema-version bump. */
     UINT32 fail_loc_hash;       /* FNV-1a of dominant-failing DIMM locator — per-SLOT, stable */
@@ -4696,7 +4714,7 @@ static void hist_save_and_diff(UINT64 total_ms) {
     cur.mca_new_errors     = g_mca_new_errors;
     cur.cpu_vendor         = (UINT32)g_cpu_vendor;
 
-    /* v0.4.46 — capture WHICH slot dominated this run's errors and WHICH stick
+    /* v0.4.47 — capture WHICH slot dominated this run's errors and WHICH stick
        currently sits in it. Next run compares: same slot + different stick ⇒
        the socket/board is at fault, not the module. */
     int fail_idx = (g_run_total_errors > 0) ? dominant_dimm_idx() : -1;
@@ -4795,7 +4813,7 @@ static void hist_save_and_diff(UINT64 total_ms) {
             log_line(lb);
         }
 
-        /* v0.4.46 — socket-vs-stick differential. SAME slot tops the errors
+        /* v0.4.47 — socket-vs-stick differential. SAME slot tops the errors
            two runs running, but the module in it changed (different SPD
            serial) ⇒ the fault follows the SOCKET, not the stick. Tell the
            user to suspect the board and KEEP the RAM. Same serial ⇒ nudge
@@ -4975,8 +4993,8 @@ static void amd_thermal_probe(void) {
         /* Test SMN by reading 0x00059800 (Tctl). FFFFFFFF = no response. */
         UINT32 v = amd_smn_read(0x00059800);
         if (v == 0xFFFFFFFF || v == 0) continue;
-        /* v0.4.46 — use the CORRECT decode (same as amd_thermal_sample):
-           apply 0x7FF mask AND bit-19 -49°C range adjust. Pre-v0.4.46
+        /* v0.4.47 — use the CORRECT decode (same as amd_thermal_sample):
+           apply 0x7FF mask AND bit-19 -49°C range adjust. Pre-v0.4.47
            probe used the broken raw>>21/8 decode and would report 92°C
            on Ryzen 9 7900X (real ~43°C) as "initial Tctl" in the log,
            which then poisoned the run-wide peak temperature counter
@@ -5000,7 +5018,7 @@ static void amd_thermal_probe(void) {
 }
 
 static UINT32 amd_thermal_sample(void) {
-    /* v0.4.46 — correct decode per Linux k10temp / FreeBSD amdtemp.c:
+    /* v0.4.47 — correct decode per Linux k10temp / FreeBSD amdtemp.c:
        SMN 0x59800 (SMU_THM_TCON_CUR_TMP)
          bits [31:21]  raw temperature value (11 bits, mask 0x7FF)
          bit  19       TempRangeSel — when SET, scale is -49°C..+206°C
@@ -5008,7 +5026,7 @@ static UINT32 amd_thermal_sample(void) {
                        scale is 0..225°C (no offset).
        temp_c = (raw * 0.125) - (range_sel ? 49 : 0)
 
-       Pre-v0.4.46 code was missing both the 0x7FF mask AND the bit-19
+       Pre-v0.4.47 code was missing both the 0x7FF mask AND the bit-19
        range adjustment, which inflated readings by ~49°C on Ryzen SKUs
        that report on the -49..206 scale (most Renoir/Cezanne/Zen3+
        desktop parts). Field report on Ryzen 5 4500 showed Tctl=93°C at
@@ -5404,7 +5422,7 @@ static void spd_parse_into_dimm(UINT8 *buf, UINTN n_bytes, dimm_info_t *d) {
     d->spd_present = 1;
 }
 
-/* ---------- v0.4.46 — iMC register diagnostic dump (Tier-2 groundwork) ----------
+/* ---------- v0.4.47 — iMC register diagnostic dump (Tier-2 groundwork) ----------
    Read-only dump of the integrated memory controller's MAD (Memory Address
    Decoder) registers. Goal: eventually decode an error's physical address to
    the EXACT DIMM slot without a swap, on supported chipsets. This version only
@@ -6496,7 +6514,7 @@ static int alloc_region_buffer_at(UINT32 region_idx, UINTN page_offset) {
     return 1;
 }
 
-/* v0.4.46 — quick-test per-DIMM targeting. Quick mode used to test 3 consecutive
+/* v0.4.47 — quick-test per-DIMM targeting. Quick mode used to test 3 consecutive
    1 GB slices of the largest region, which on multi-DIMM desktops always landed
    in ONE DIMM's range (e.g. DIMM4 = 4-8 GB) — so a quick run could only ever
    blame that stick, on any PC. These hold one allocatable (region, offset) per
@@ -6774,7 +6792,7 @@ static test_def_t g_tests[] = {
 };
 #define N_TESTS (sizeof(g_tests) / sizeof(g_tests[0]))
 
-/* v0.4.46 — map a kernel enum (KER_*) to its position in g_tests[].
+/* v0.4.47 — map a kernel enum (KER_*) to its position in g_tests[].
    CRITICAL: do NOT index g_tests[] directly by a kernel_id_t value.
    The enum values do not match array positions (e.g., KER_AVX2_SUSTAINED
    = 12 maps to position 0 in g_tests because AVX2 Sustained is the
@@ -6926,7 +6944,7 @@ typedef struct {
 } card_info_t;
 static card_info_t g_cards[N_TESTS];
 
-/* v0.4.46 — Forward decls for focused-mode helpers (defined below
+/* v0.4.47 — Forward decls for focused-mode helpers (defined below
    card_paint so they can share the same color-lookup logic). */
 static void card_paint_full(UINTN i);
 static void card_strip_paint(UINTN i);
@@ -7040,7 +7058,7 @@ static void card_paint_full(UINTN i) {
     }
 }
 
-/* ---------- Focused-mode card painters (v0.4.46) ---------- */
+/* ---------- Focused-mode card painters (v0.4.47) ---------- */
 
 /* Paint the small status dot for test i in the top strip. The strip is
    one row tall and shows N evenly-spaced dots, one per test. The dot
@@ -7123,7 +7141,7 @@ static void card_focused_paint(UINTN i) {
     blt_fill(ix, row3_y, iw, row_h, COL_PANEL);
 
     /* Row 1: test name (left) + short description in dim color + index counter (right).
-       v0.4.46 — description lets non-expert user know what the test
+       v0.4.47 — description lets non-expert user know what the test
        actually checks (TRRespass / March-C- / Butterfly etc. are jargon). */
     say_at_px(ix + 4, row1_y, g_tests[i].name);
     UINTN name_chars = StrLen(g_tests[i].name);
@@ -7408,12 +7426,12 @@ static void core_cols_compute(core_cols_t *c) {
     if (slack >= 9 * cw + pad) { w_freq = 9 * cw; slack -= w_freq + pad; }
     /* Priority 4: Per-core MB/s — 6 chars */
     if (slack >= 6 * cw + pad) { w_mbs  = 6 * cw; slack -= w_mbs  + pad; }
-    /* v0.4.46 — "Смещ" (buffer-offset for this core's slice) column dropped
+    /* v0.4.47 — "Смещ" (buffer-offset for this core's slice) column dropped
        from the main test screen. It was a developer-debug field that nobody
        in the field could interpret; removing it frees ~9 chars to widen the
        activity bar. The offset is still in the log and the JSON. */
     (void)w_addr;
-    /* v0.4.46 — the activity bar duplicates the "99%" number right next to it;
+    /* v0.4.47 — the activity bar duplicates the "99%" number right next to it;
        its only real job is an at-a-glance colour cue (green=busy / red=idle).
        So keep it SHORT — was up to 16 cw extra (~20 cw total, half the row on
        wide screens), now capped at 2 cw extra (~6 cw total). The freed width
@@ -7610,7 +7628,7 @@ static void core_panel_update(void) {
         }
 
         /* Bar — short colour cue in its own narrow column; the "99%" number
-           carries the precise value. v0.4.46 — thin, fixed ~8 px in BOTH modes
+           carries the precise value. v0.4.47 — thin, fixed ~8 px in BOTH modes
            (was nearly the full row height in comfort mode), so 8/16/24 bars no
            longer dominate the panel. Centred vertically in the row. */
         UINTN bar_x = cx + c.x_bar;
@@ -7751,8 +7769,8 @@ static void render_progress(UINTN test_idx, UINT64 t_started_ms,
 
 /* ---------- Countdown ---------- */
 volatile int g_aborted = 0;
-volatile int g_force_kernel_exit = 0;   /* v0.4.46 — BSP-forced timed-kernel deadline */
-/* v0.4.46 — anti-hang watchdog state. A worker core that never reports "done"
+volatile int g_force_kernel_exit = 0;   /* v0.4.47 — BSP-forced timed-kernel deadline */
+/* v0.4.47 — anti-hang watchdog state. A worker core that never reports "done"
    within the grace window after the BSP finished its own slice is marked dead:
    the BSP stops waiting on it (so the run can't hang for an hour) and no longer
    dispatches work to it on later tests. g_core_stall_count surfaces the total
@@ -7786,8 +7804,8 @@ static void drain_conin(void) {
     }
 }
 
-/* v0.4.46 — countdown UX rework.
-   Pre-v0.4.46: ESC meant "skip the wait and start the test now" — which
+/* v0.4.47 — countdown UX rework.
+   Pre-v0.4.47: ESC meant "skip the wait and start the test now" — which
    completely contradicts the universal "ESC = cancel" convention. Users
    pressed ESC expecting "I don't want this test" and instead launched it.
 
@@ -7986,7 +8004,7 @@ static void bsp_yield_render(ap_arg_t *a) {
        order of seconds, not 50-ms ticks. */
     if (now - g_last_yield_ms < 100) return;
     g_last_yield_ms = now;
-    watchdog_kick();   /* v0.4.46 — BSP alive → keep the reboot watchdog at bay */
+    watchdog_kick();   /* v0.4.47 — BSP alive → keep the reboot watchdog at bay */
     sample_aggregate_metrics(now);
     /* Refresh the HEADER too — previously only between tests, so during
        a long test (Bit Fade Ext = 6 min) the header froze: elapsed time
@@ -8007,20 +8025,39 @@ static test_summary_t run_test_mc(UINTN test_idx) {
     g_cur_test_idx     = test_idx;
     g_cur_test_started = t_started;
     g_last_yield_ms    = 0;
-    g_force_kernel_exit = 0;   /* v0.4.46 — clear deadline flag for this test */
-    watchdog_kick();           /* v0.4.46 — arm the hardware reboot watchdog */
+    g_force_kernel_exit = 0;   /* v0.4.47 — clear deadline flag for this test */
+    watchdog_kick();           /* v0.4.47 — arm the hardware reboot watchdog */
 
     UINTN total_q = (g_mem_pages * 4096) / 8;
-    UINTN per_q   = total_q / g_n_enabled;
     UINT64 *base  = (UINT64 *)(UINTN)g_mem_addr;
 
+    /* v0.4.47 — BW Soak runs ONE thread per physical core. Two SMT siblings
+       streaming vmovntdq fight over the core's write-combining buffers; the
+       loser starves and gets falsely marked "stalled". SMT adds no memory
+       bandwidth, so dropping siblings keeps the stress and kills the false
+       stall. Gated off if topology is unknown or the BSP itself is a sibling
+       (slot 0 always runs inline). */
+    int phys_only = (g_tests[test_idx].k == KER_BW_SOAK) &&
+                    g_smt_have_topology && !g_smt_sibling[0];
+    UINTN n_active = 0;
+    for (UINTN i = 0; i < g_n_enabled; i++)
+        if (!(phys_only && g_smt_sibling[i])) n_active++;
+    if (n_active == 0) n_active = g_n_enabled;     /* paranoia: never /0 */
+    UINTN per_q = total_q / n_active;
+    if (phys_only) {
+        CHAR16 lb[140];
+        SPrint(lb, sizeof(lb),
+               L"[BW] physical-cores-only: %d core(s), skipping %d SMT sibling(s)",
+               (UINT32)n_active, (UINT32)(g_n_enabled - n_active));
+        log_line(lb);
+    }
+
+    UINTN active_idx = 0;
     for (UINTN i = 0; i < g_n_enabled; i++) {
-        g_args[i].base     = base + i * per_q;
-        g_args[i].n_qwords = per_q;
+        int skip = (phys_only && g_smt_sibling[i]);
         g_args[i].kernel   = g_tests[test_idx].k;
         g_args[i].core_idx = (UINT32)i;
         g_args[i].progress = 0;
-        g_args[i].done     = 0;
         g_args[i].errors   = 0;
         g_args[i].bytes    = 0;
         g_args[i].util_tsc_prev   = 0;
@@ -8038,6 +8075,19 @@ static test_summary_t run_test_mc(UINTN test_idx) {
         /* Only BSP slot renders. APs leave yield NULL — drawing from an AP
            would race with BSP on the framebuffer. */
         g_args[i].yield    = (i == 0) ? bsp_yield_render : NULL;
+        if (skip) {
+            /* Parked SMT sibling: no work, pre-marked done so the spin-poll
+               never waits on it; and it is NOT dispatched below — a kernel
+               with n_qwords=0 would underflow and hang in the write-asm. */
+            g_args[i].base     = base;
+            g_args[i].n_qwords = 0;
+            g_args[i].done     = 1;
+        } else {
+            g_args[i].base     = base + active_idx * per_q;
+            g_args[i].n_qwords = per_q;
+            g_args[i].done     = 0;
+            active_idx++;
+        }
     }
 
     /* Non-blocking AP dispatch: pass dummy WaitEvent so StartupThisAP
@@ -8056,7 +8106,8 @@ static test_summary_t run_test_mc(UINTN test_idx) {
             log_line(lb);
         }
         for (UINTN i = 1; i < g_n_enabled; i++) {
-            if (g_core_dead[i]) continue;   /* v0.4.46 — skip cores that stalled earlier */
+            if (g_core_dead[i]) continue;   /* v0.4.47 — skip cores that stalled earlier */
+            if (phys_only && g_smt_sibling[i]) continue;   /* v0.4.47 — BW Soak: phys cores only (n=0 would hang) */
             uefi_call_wrapper(BS->CreateEvent, 5, 0, 0, NULL, NULL, &ap_events[i]);
             EFI_STATUS sd = uefi_call_wrapper(g_mp->StartupThisAP, 7, g_mp,
                               (EFI_AP_PROCEDURE)ap_entry,
@@ -8079,7 +8130,7 @@ static test_summary_t run_test_mc(UINTN test_idx) {
     if (test_idx == 0) log_line(L"[DISP] BSP returned from ap_entry slot 0");
 
     /* Once-per-run diagnostic: how many APs successfully bumped the
-       CPU into max P-state, by which mechanism. Pre-v0.4.46 this only
+       CPU into max P-state, by which mechanism. Pre-v0.4.47 this only
        counted the HWP path, so on Haswell/Ivy/Sandy (no HWP) the line
        read OK=0 FAIL=0 — making it look like nothing happened, even
        though the legacy PERF_CTL fallback was actually doing its job. */
@@ -8108,13 +8159,13 @@ static test_summary_t run_test_mc(UINTN test_idx) {
 
     /* Spin-poll worker (AP) done flags. Also polls the keyboard so ESC during
        a long test can abort.
-       v0.4.46 — anti-hang watchdog for EVERY kernel, not just the two timed
+       v0.4.47 — anti-hang watchdog for EVERY kernel, not just the two timed
        soaks. The BSP has just finished its OWN slice — the same workload each
        worker core was given — so a healthy core should finish within a
        comparable time. We arm a deadline relative to when the BSP finished:
             hang_deadline = bsp_done_ms + 60 s
        For the timed soaks the BSP itself runs the full duration, so this lands
-       at duration + 60 s — identical to the old v0.4.46 behaviour. For the
+       at duration + 60 s — identical to the old v0.4.47 behaviour. For the
        short untimed kernels (AVX2 Sustained, March, ...) it lands ~60 s after
        the BSP finished instead of the old hard 1-hour cap.
        Two-stage response when the deadline passes with cores still pending:
@@ -8136,10 +8187,11 @@ static test_summary_t run_test_mc(UINTN test_idx) {
             int all_done = 1;
             UINTN n_pending = 0;
             for (UINTN i = 1; i < g_n_enabled; i++)
-                if (!g_args[i].done && !g_core_dead[i]) { all_done = 0; n_pending++; }
+                if (!g_args[i].done && !g_core_dead[i] &&
+                    !(phys_only && g_smt_sibling[i])) { all_done = 0; n_pending++; }
             if (all_done) break;
             UINT64 sp_now = ms_now();
-            watchdog_kick();   /* v0.4.46 — BSP alive while waiting on workers */
+            watchdog_kick();   /* v0.4.47 — BSP alive while waiting on workers */
             /* Stage 1: deadline passed — ask still-looping cores to bail. */
             if (sp_now > hang_deadline && !g_force_kernel_exit) {
                 g_force_kernel_exit = 1;
@@ -8160,7 +8212,8 @@ static test_summary_t run_test_mc(UINTN test_idx) {
                 CHAR16 ids[96]; ids[0] = 0;
                 UINTN listed = 0;
                 for (UINTN i = 1; i < g_n_enabled; i++) {
-                    if (!g_args[i].done && !g_core_dead[i]) {
+                    if (!g_args[i].done && !g_core_dead[i] &&
+                        !(phys_only && g_smt_sibling[i])) {
                         g_core_dead[i] = 1;
                         g_core_stall_count++;
                         if (listed < 12) {
@@ -8175,7 +8228,7 @@ static test_summary_t run_test_mc(UINTN test_idx) {
                 SPrint(gl, sizeof(gl),
                        L"[STALL] %s — gave up on %d core(s) [%s] that never "
                        L"reported done; continuing with partial results "
-                       L"(core trapped/halted, NOT a RAM error)",
+                       L"(slow/starved core or a hung worker, NOT a RAM error)",
                        g_tests[test_idx].name, (UINT32)n_pending, ids);
                 log_line(gl);
                 break;
@@ -8216,7 +8269,7 @@ static test_summary_t run_test_mc(UINTN test_idx) {
         s.bytes  += g_args[i].bytes;
     }
     s.status = (s.errors == 0) ? 1 : 2;
-    watchdog_off();   /* v0.4.46 — test done; no reboot at menu/verdict/report */
+    watchdog_off();   /* v0.4.47 — test done; no reboot at menu/verdict/report */
     return s;
 }
 
@@ -8244,13 +8297,13 @@ typedef enum {
    but worrying signals (MCA new corrected errors, BW degraded, big temp
    regression vs prev run), FAIL = any errors recorded. */
 static verdict_kind_t compute_verdict_kind(void) {
-    /* v0.4.46 — errors take priority over an abort. If the user stopped the
+    /* v0.4.47 — errors take priority over an abort. If the user stopped the
        run but errors were already found, show the REAL verdict (which DIMM,
        stuck bits, ...) from the data collected so far — not just "you stopped
        it". Only a clean abort (no errors yet) stays a soft "incomplete" WARN. */
     if (g_err_count > 0)      return VERDICT_FAIL;
     if (g_aborted)            return VERDICT_WARN;   /* aborted, no errors — incomplete */
-    if (g_core_stall_count>0) return VERDICT_WARN;   /* v0.4.46 — incomplete run */
+    if (g_core_stall_count>0) return VERDICT_WARN;   /* v0.4.47 — incomplete run */
     if (g_mca_new_errors > 0) return VERDICT_WARN;
     if (g_bw_trend_degraded >= 2) return VERDICT_WARN;  /* severe BW drop */
     /* Cold/warm boot delta — large temp regression vs last run = WARN */
@@ -8360,7 +8413,7 @@ static int verdict_describe_what_broke(CHAR16 *line1, UINTN cap1,
     return n;
 }
 
-/* ---------- v0.4.46 Auto-isolation feature ----------
+/* ---------- v0.4.47 Auto-isolation feature ----------
    When the post-test verdict detects "errors on 2+ DIMMs in block-mapped
    Type 20", we can definitively identify the bad stick(s) by re-running
    the failing test on each DIMM in turn with TestOnlyDimm, instead of
@@ -8368,7 +8421,7 @@ static int verdict_describe_what_broke(CHAR16 *line1, UINTN cap1,
    on real cache-line interleave, TestOnlyDimm doesn't physically isolate
    because the iMC still alternates between channels.                  */
 
-/* v0.4.46 — should auto-isolation kick in automatically?
+/* v0.4.47 — should auto-isolation kick in automatically?
    Same conditions as the [I] offer in render_simple_verdict, but checked
    from the main test loop right after tests complete so we can run
    isolation BEFORE showing the verdict and skip the "press [I] then wait"
@@ -8772,7 +8825,7 @@ static void render_isolation_verdict(void) {
 static void render_simple_verdict(UINT64 total_ms) {
     cls();
     verdict_kind_t v = compute_verdict_kind();
-    /* v0.4.46 — reset isolation offer; will be enabled below if applicable. */
+    /* v0.4.47 — reset isolation offer; will be enabled below if applicable. */
     g_iso_offer = 0;
     g_iso_dimm_n = 0;
 
@@ -8829,7 +8882,7 @@ static void render_simple_verdict(UINT64 total_ms) {
     verdict_say_centered(stats, y, COL_DIM, 1);
     y += g_char_h * 2;
 
-    /* v0.4.46 — if the user stopped the run early, flag it right under the
+    /* v0.4.47 — if the user stopped the run early, flag it right under the
        stats. The verdict shown is computed from whatever was collected before
        the stop (errors outrank the abort), so on a FAIL this reads as "already
        enough to act on" rather than just "you aborted". */
@@ -8841,7 +8894,7 @@ static void render_simple_verdict(UINT64 total_ms) {
         y += g_char_h + g_pad;
     }
 
-    /* v0.4.46 — when there are errors, show the TRUE per-DIMM split right here
+    /* v0.4.47 — when there are errors, show the TRUE per-DIMM split right here
        (counted across the whole run, not just the first 32 records). This is
        the headline answer to "which stick" and won't go blind to a DIMM that
        was tested late in a multipass run. */
@@ -8978,7 +9031,7 @@ static void render_simple_verdict(UINT64 total_ms) {
         UINTN dist_n = distributed_dimm_indices(dist_idx, MAX_DIMMS);
         int is_distributed = (dist_n >= 2);
 
-        /* v0.4.46 — Approach D + A: classify WHY errors are distributed.
+        /* v0.4.47 — Approach D + A: classify WHY errors are distributed.
              type20_overlap = 1 → ranges overlap (real cache-line interleave)
                                   → "ONE chip behind two labels"
              type20_overlap = 0, depth ≤ 1 → block mode (disjoint ranges,
@@ -9058,12 +9111,12 @@ static void render_simple_verdict(UINT64 total_ms) {
                 T(L"  это РЕАЛЬНО на разных физических плашках, обе дефектные.",
                   L"  on physically separate sticks; both are defective."),
                 COL_DIM); cy += cline + 6;
-            /* v0.4.46 — offer auto-isolation: re-test each DIMM in its own
+            /* v0.4.47 — offer auto-isolation: re-test each DIMM in its own
                physical address range to confirm WHICH ones are actually
                bad (vs symptom of one chip pretending to be two). Block-
                mapped Type 20 is the precondition — on real cache-line
                interleave TestOnlyDimm doesn't physically isolate.
-               v0.4.46 — only offer [I] if auto-isolation hasn't already
+               v0.4.47 — only offer [I] if auto-isolation hasn't already
                run (g_iso_results_n == 0). The normal flow now triggers
                isolation automatically right after the test loop, so the
                [I] offer here is only relevant when the user navigated
@@ -9269,7 +9322,7 @@ static void render_simple_verdict(UINT64 total_ms) {
     }
 
     /* Footer hint — same key handling as the technical summary, plus [D].
-       v0.4.46: [I] for auto-isolation when offered. */
+       v0.4.47: [I] for auto-isolation when offered. */
     UINTN foot_y = g_h - g_char_h - 8;
     blt_fill(0, foot_y - 4, g_w, g_char_h + 8, COL_PANEL_ALT);
     blt_fill(0, foot_y - 5, g_w, 1, COL_BORDER);
@@ -9298,8 +9351,8 @@ static void render_summary(UINT64 total_ms) {
     UINTN hrow = (g_hdr_h / 2 - g_char_h / 2) / g_char_h;
     CHAR16 buf[200];
     SPrint(buf, sizeof(buf),
-           T(L"  MEMFORGE v0.4.46 ИТОГИ   |   %d сек   |   Ядра %d/%d",
-             L"  MEMFORGE v0.4.46 SUMMARY   |   %d sec   |   Cores %d/%d"),
+           T(L"  MEMFORGE v0.4.47 ИТОГИ   |   %d сек   |   Ядра %d/%d",
+             L"  MEMFORGE v0.4.47 SUMMARY   |   %d sec   |   Cores %d/%d"),
            (UINT32)(total_ms / 1000),
            (UINT32)g_n_enabled, (UINT32)g_n_cores);
     say_at_rc(0, hrow, buf);
@@ -9381,7 +9434,7 @@ static void render_summary(UINT64 total_ms) {
                 CHAR16 chip[64] = L"";
                 if (didx >= 0)
                     chip_label_for_bit((UINT32)didx, bp, chip, 64);
-                /* v0.4.46 — use SMBIOS Type 17 locator string ("DDR4-B2")
+                /* v0.4.47 — use SMBIOS Type 17 locator string ("DDR4-B2")
                    instead of array-index-based "DIMM%d" which had nothing
                    to do with the physical slot label the user sees. */
                 CHAR8 *loc = (didx >= 0 && g_dimms[didx].locator[0])
@@ -9482,7 +9535,7 @@ static void render_summary(UINT64 total_ms) {
         log_line(dimm_line);
         row++;
 
-        /* (3) 1-GB histogram — v0.4.46: short label on its own row, then
+        /* (3) 1-GB histogram — v0.4.47: short label on its own row, then
            entries wrapped across multiple rows so nothing falls off the
            right edge on a 1024-pixel screen (a 14-entry histogram is
            ~120 chars which doesn't fit any reasonable single line). */
@@ -9933,17 +9986,17 @@ static void write_json_report(UINT64 total_ms) {
         L"  \"summary\": {\"passed\":%d,\"failed\":%d,\"skipped\":%d,\"total_errors\":%ld},\r\n"
         L"  \"verdict\": \"%a\",\r\n",
         n_pass, n_fail, n_skip, grand_err,
-        (grand_err > 0 ? "FAIL"                      /* v0.4.46 — errors win, */
+        (grand_err > 0 ? "FAIL"                      /* v0.4.47 — errors win, */
             : (g_aborted ? "ABORTED"                 /* even if user aborted   */
             : (g_core_stall_count > 0 ? "INCOMPLETE" : "PASS"))));
     json_write_chunk(jf, buf);
 
-    /* v0.4.46 — surface core stalls so the analyzer never reads a stalled
+    /* v0.4.47 — surface core stalls so the analyzer never reads a stalled
        (incomplete) run as a clean PASS. */
     SPrint(buf, sizeof(buf), L"  \"core_stalls\": %d,\r\n", g_core_stall_count);
     json_write_chunk(jf, buf);
 
-    /* v0.4.46 — per-DIMM error totals across the whole run (every error, not
+    /* v0.4.47 — per-DIMM error totals across the whole run (every error, not
        just the 32 detailed records). Lets the analyzer/operator see the true
        split instead of "whatever filled the 32-slot buffer first". */
     json_write_chunk(jf, L"  \"dimm_errors\": [");
@@ -9956,7 +10009,7 @@ static void write_json_report(UINT64 total_ms) {
     }
     json_write_chunk(jf, L"],\r\n");
 
-    /* v0.4.46 — attribution-reliability flag: whether "blame DIMM X" can be
+    /* v0.4.47 — attribution-reliability flag: whether "blame DIMM X" can be
        trusted. Empirical (one DIMM hot, the rest tested-and-clean, enough
        errors), not from SMBIOS interleave fields or argmax. */
     {
@@ -9995,7 +10048,7 @@ static void write_json_report(UINT64 total_ms) {
         g_bw_trend_last_pct, g_bw_trend_degraded);
     json_write_chunk(jf, buf);
 
-    /* v0.4.46 — run-wide peaks. Lets an automated analyzer verify the
+    /* v0.4.47 — run-wide peaks. Lets an automated analyzer verify the
        CPU actually got loaded (without these the JSON had no way to
        answer "was the workload real or did the CPU idle?"). */
     UINT32 peak_bw_gbs_x10 = g_bw_mbps_peak ? (g_bw_mbps_peak * 10 / 1024) : 0;
@@ -11004,7 +11057,7 @@ static void recheck_fb_dimensions(void) {
     }
 }
 
-/* v0.4.46 — log the geometry the renderer ACTUALLY uses at a given moment, plus
+/* v0.4.47 — log the geometry the renderer ACTUALLY uses at a given moment, plus
    the firmware's LIVE Mode->Info. Garbled/overlapping-text reports (firmware
    that lies about resolution) can then be diagnosed from the log alone, on any
    machine: if our g_w/g_h disagree with the live Mode->Info / ppsl / FBSize at
@@ -11056,11 +11109,11 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
            [Display] Width=N Height=N in quantai.ini overrides the picked
            mode if user needs to force a specific resolution (e.g. firmware
            offers a broken mode that should be skipped). */
-        /* v0.4.46 — robust mode picker with per-mode verification.
+        /* v0.4.47 — robust mode picker with per-mode verification.
            Field report (MSI B650 TOMAHAWK + BIOS 1.M3 on Ryzen 9 7900X):
            our SetMode(3440x1440) was silently rejected by firmware which
            stayed at default 800x600 — but Mode->Info still LIED that it
-           was at 3440x1440. The pre-v0.4.46 LATE check eventually caught
+           was at 3440x1440. The pre-v0.4.47 LATE check eventually caught
            the mismatch and clamped g_w/g_h, but by then the splash and
            main menu had already rendered as garbage onto an 800x600
            framebuffer using 3440x1440 coordinates.
@@ -11142,11 +11195,11 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
                 uefi_call_wrapper(g_gop->Blt, 10, g_gop, &kick, EfiBltVideoFill,
                                   0, 0, 0, 0, 1, 1, 0);
             }
-            /* v0.4.46 — verify against THIS mode's OWN required framebuffer
+            /* v0.4.47 — verify against THIS mode's OWN required framebuffer
                bytes, using the per-mode ppsl from QueryMode. Do NOT read
                g_gop->Mode->Info->PixelsPerScanLine here: on MSI B650 BIOS
                1.M3 it stays STUCK at the first-attempted mode's ppsl (3456)
-               after a silently-failed SetMode, which made v0.4.46 reject
+               after a silently-failed SetMode, which made v0.4.47 reject
                every later mode and fall through to the lying 3440x1440.
                FrameBufferSize stays honest at the real allocation size; a
                mode is genuinely active only if the buffer can hold it. */
@@ -11225,6 +11278,18 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
     }
     if (g_n_enabled == 0) g_n_enabled = 1;
     if (g_n_cores   == 0) g_n_cores   = 1;
+    /* v0.4.47 — read SMT topology so BW Soak can run one thread per physical
+       core (NT-store siblings starve each other -> false stalls). Silent here;
+       the [BW] line logs the actual split when the test uses it. */
+    if (g_mp) {
+        for (UINTN i = 0; i < g_n_enabled && i < MAX_CORES; i++) {
+            EFI_PROCESSOR_INFORMATION pinfo;
+            if (!EFI_ERROR(uefi_call_wrapper(g_mp->GetProcessorInfo, 3, g_mp, i, &pinfo))) {
+                g_smt_have_topology = 1;
+                g_smt_sibling[i] = (pinfo.Location.Thread != 0) ? 1 : 0;
+            }
+        }
+    }
     /* MP services diagnostic log — written AFTER log file opens, see below. */
 
     /* We use our own bundled font (12x24) for ALL UI text, not UEFI ConOut.
@@ -11274,7 +11339,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
         }
     }
 
-    log_line(L"=== MemForge2 v0.4.46 init ===");
+    log_line(L"=== MemForge2 v0.4.47 init ===");
     log_line(L"[WATCHDOG] UEFI 5-min watchdog disabled at app entry");
     /* Show splash IMMEDIATELY so the user sees the program is alive while
        INI parsing, SMBus probes and SMBIOS walk happen. Without this, the
@@ -11319,7 +11384,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
                 if (uefi_call_wrapper(g_gop->QueryMode, 4,
                                       g_gop, m, &info_sz, &info) != EFI_SUCCESS)
                     continue;
-                /* v0.4.46 — also log PixelFormat and PixelsPerScanLine
+                /* v0.4.47 — also log PixelFormat and PixelsPerScanLine
                    so we can see if a card (e.g. old Radeon HD 4350) only
                    offers BltOnly modes (PixelFormat=3) that prevent
                    direct-fb rendering. */
@@ -11334,7 +11399,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
             log_line(L"[GFX] NO GOP PROTOCOL FOUND — firmware has no UEFI graphics. "
                      L"Falling back to 800x600 default. UI will not render correctly.");
         }
-        /* v0.4.46 — MP Services Protocol diagnostic. Without this log it
+        /* v0.4.47 — MP Services Protocol diagnostic. Without this log it
            was impossible to tell from a field report whether multi-core
            dispatch failed (LocateProtocol error / GetNumberOfProcessors
            returned 1) or the test was simply running on a single-core
@@ -11396,7 +11461,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
        blocks SMBus probes and each address NACK has to time out. */
     init_splash(g_lang ? L"Reading DIMM SPDs..." : L"Чтение SPD планок...");
     spd_populate_dimms();
-    /* v0.4.46 — iMC register dump (read-only). Groundwork for Tier-2 exact
+    /* v0.4.47 — iMC register dump (read-only). Groundwork for Tier-2 exact
        address->slot decode; for now logs MAD topology + cross-checks SMBIOS. */
     imc_dump();
     /* Once total RAM is known: scale buffer-chunk size for big-RAM systems
@@ -11713,14 +11778,14 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
         g_freq_avg_mhz = 0;
         g_cum_bytes = 0;
         g_pass_durations_count = 0;
-        g_core_stall_count = 0;   /* v0.4.46 — clear stall tally for fresh run */
-        g_err_count = 0;          /* v0.4.46 — fresh error tally each run */
+        g_core_stall_count = 0;   /* v0.4.47 — clear stall tally for fresh run */
+        g_err_count = 0;          /* v0.4.47 — fresh error tally each run */
         for (UINTN d = 0; d < MAX_DIMMS; d++) g_dimm_err_count[d] = 0;
-        for (UINTN d = 0; d < MAX_DIMMS; d++) g_dimm_tested[d] = 0;   /* v0.4.46 — fresh per-run */
+        for (UINTN d = 0; d < MAX_DIMMS; d++) g_dimm_tested[d] = 0;   /* v0.4.47 — fresh per-run */
         for (UINTN i = 0; i < g_n_enabled; i++) {
             g_args[i].throttle_event_count = 0;
             g_args[i].throttle_was_active  = 0;
-            g_core_dead[i] = 0;   /* v0.4.46 — un-blacklist any stalled cores */
+            g_core_dead[i] = 0;   /* v0.4.47 — un-blacklist any stalled cores */
         }
 
         /* Multi-pass support.
@@ -11735,7 +11800,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
            tested" gap users (rightly) complained about. */
         UINT32 passes_target = g_cfg_passes;
         if (g_quick_mode) {
-            /* v0.4.46 — quick triage now samples EVERY DIMM (one chunk per
+            /* v0.4.47 — quick triage now samples EVERY DIMM (one chunk per
                Type-20 range) instead of 3 consecutive slices of the first
                region — the latter always landed in one DIMM (e.g. DIMM4 =
                4-8 GB) so a quick run could only ever blame that one stick. */
@@ -11821,7 +11886,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
                 if (g_mem_addr) { free_test_buffer(); g_mem_addr = 0; }
                 /* Find next (region, offset) that yields a usable allocation. */
                 int alloced = 0;
-                /* v0.4.46 — quick mode: allocate at this pass's per-DIMM target
+                /* v0.4.47 — quick mode: allocate at this pass's per-DIMM target
                    (one chunk per DIMM) instead of walking sequentially. The
                    while-loop below is skipped because its guard checks !alloced. */
                 if (g_quick_mode && g_quick_n > 0 && pass < g_quick_n)
@@ -11869,7 +11934,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
                 cards_init_all();
             }
 
-        /* v0.4.46 — record which DIMM(s) this pass's buffer physically sits on,
+        /* v0.4.47 — record which DIMM(s) this pass's buffer physically sits on,
            so the attribution classifier can tell a real "clean" DIMM from one
            whose chunk never got tested. Covers both modes (multipass: fresh
            buffer per pass; single buffer: idempotent). */
@@ -11965,7 +12030,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
             g_cards[i].errors = 0;
             card_paint(i);
 
-            /* v0.4.46 — countdown returns 0=start, 1=skip this test, 2=abort run */
+            /* v0.4.47 — countdown returns 0=start, 1=skip this test, 2=abort run */
             int cd_rc = countdown(2, i);
             if (cd_rc == 2) break;          /* Q → abort whole run */
             if (cd_rc == 1) {                /* ESC → skip this test */
@@ -11982,7 +12047,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
                 done_tests++;
                 continue;
             }
-            /* v0.4.46 — clear the countdown footer once the test starts.
+            /* v0.4.47 — clear the countdown footer once the test starts.
                The old "[N/14] Test starts in 2 sec ..." line would linger
                throughout the test run, taking up screen space without
                serving any purpose during the test itself. Replace with a
@@ -12008,8 +12073,8 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
                per-test results to survive that. Cheap (1× per test, not
                1× per log line). */
             flush_log_now();
-            /* v0.4.46 — ACCUMULATE across marathon passes, do not OVERWRITE.
-               Pre-v0.4.46 the line was `g_summary[i] = r;` which kept only
+            /* v0.4.47 — ACCUMULATE across marathon passes, do not OVERWRITE.
+               Pre-v0.4.47 the line was `g_summary[i] = r;` which kept only
                the LAST pass's per-test result. On a 16-hour marathon with
                an intermittent error rate of 1 per pass, that meant the
                final summary table showed "errors: 0" because the most
@@ -12096,7 +12161,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
         /* Persist this run's summary to NVRAM and log delta vs prev run.
            Lets a shop see across reboots whether the symptom reproduces. */
         hist_save_and_diff(total_ms);
-        /* v0.4.46 — auto-isolation: if errors are distributed across 2+
+        /* v0.4.47 — auto-isolation: if errors are distributed across 2+
            DIMMs on a block-mapped system, automatically run per-DIMM
            re-test BEFORE showing the verdict. No user key needed. The
            result screen becomes the verdict the user sees. */
@@ -12283,7 +12348,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
                         /* Cyrillic ш/Ш = same physical key as I on RU layout */
                         k.UnicodeChar == 0x0448 || k.UnicodeChar == 0x0428)
                        && g_iso_offer) {
-                /* v0.4.46 — auto-isolation: re-test each affected DIMM with
+                /* v0.4.47 — auto-isolation: re-test each affected DIMM with
                    TestOnlyDimm, give a definitive REPLACE answer. */
                 do_auto_isolation();
                 render_isolation_verdict();
