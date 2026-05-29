@@ -76,3 +76,6 @@ DEVLOG.local.md
 
 # linewatch state — per-session snapshot, never goes to git
 .linewatch-state
+
+# Internal working agreement — keep local, never publish
+CLAUDE.md
