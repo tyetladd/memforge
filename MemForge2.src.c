@@ -1,5 +1,5 @@
 /*
- * MemForge2 v0.4.64 — UEFI memory tester written from scratch.
+ * MemForge2 v0.4.65 — UEFI memory tester written from scratch.
  *
  * Latest release: https://github.com/Paradoxdov/memforge/releases
  * For per-version changes see git log / GitHub Releases page.
@@ -891,7 +891,7 @@ static void init_splash(CHAR16 *stage) {
     cls();
     UINTN cy = g_h / 2;
     /* Title — large centered line. */
-    CHAR16 *title = L"MEMFORGE v0.4.64";
+    CHAR16 *title = L"MEMFORGE v0.4.65";
     UINTN tx = (g_w - StrLen(title) * g_char_w) / 2;
     gfx_draw_str_color(tx, cy - g_char_h * 2, title, COL_ACCENT_HI);
     /* Stage indicator — what we're doing right now. */
@@ -1295,9 +1295,9 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
     UINTN cols = g_text_cols;
     if (cols >= 110) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.64   |   %ld.%ld ГБ RAM   |   %s   "
+               T(L"  MEMFORGE v0.4.65   |   %ld.%ld ГБ RAM   |   %s   "
                  L"|   %s   |   прошло %02d:%02d   |   осталось ~%02d:%02d   |   Тесты %d/%d",
-                 L"  MEMFORGE v0.4.64   |   %ld.%ld GB RAM   |   %s   "
+                 L"  MEMFORGE v0.4.65   |   %ld.%ld GB RAM   |   %s   "
                  L"|   %s   |   elapsed %02d:%02d   |   ETA ~%02d:%02d   |   Tests %d/%d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
@@ -1307,8 +1307,8 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
                (UINT32)done, (UINT32)total);
     } else if (cols >= 90) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.64   |   %ld.%ld ГБ RAM   |   %s   |   %s   |   прошло %02d:%02d   |   осталось ~%02d:%02d",
-                 L"  MEMFORGE v0.4.64   |   %ld.%ld GB RAM   |   %s   |   %s   |   elapsed %02d:%02d   |   ETA ~%02d:%02d"),
+               T(L"  MEMFORGE v0.4.65   |   %ld.%ld ГБ RAM   |   %s   |   %s   |   прошло %02d:%02d   |   осталось ~%02d:%02d",
+                 L"  MEMFORGE v0.4.65   |   %ld.%ld GB RAM   |   %s   |   %s   |   elapsed %02d:%02d   |   ETA ~%02d:%02d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
                err_tag,
@@ -1316,16 +1316,16 @@ static void render_header(UINT64 elapsed_ms, UINTN done, UINTN total) {
                eta_secs / 60, eta_secs % 60);
     } else if (cols >= 70) {
         SPrint(buf, sizeof(buf),
-               T(L"  MEMFORGE v0.4.64  |  %ld.%ld ГБ RAM  |  %s  |  %s  |  прошло %02d:%02d",
-                 L"  MEMFORGE v0.4.64  |  %ld.%ld GB RAM  |  %s  |  %s  |  elapsed %02d:%02d"),
+               T(L"  MEMFORGE v0.4.65  |  %ld.%ld ГБ RAM  |  %s  |  %s  |  прошло %02d:%02d",
+                 L"  MEMFORGE v0.4.65  |  %ld.%ld GB RAM  |  %s  |  %s  |  elapsed %02d:%02d"),
                ram_gb_x10 / 10, ram_gb_x10 % 10,
                pass_tag,
                err_tag,
                secs / 60, secs % 60);
     } else {
         SPrint(buf, sizeof(buf),
-               T(L" MEMFORGE v0.4.64 | %s | %s | прошло %02d:%02d",
-                 L" MEMFORGE v0.4.64 | %s | %s | elapsed %02d:%02d"),
+               T(L" MEMFORGE v0.4.65 | %s | %s | прошло %02d:%02d",
+                 L" MEMFORGE v0.4.65 | %s | %s | elapsed %02d:%02d"),
                pass_tag,
                err_tag,
                secs / 60, secs % 60);
@@ -1679,7 +1679,7 @@ static volatile UINT32 g_dimm_err_count[MAX_DIMMS] = {0};
    NOT "clean" — the attribution classifier must not treat it as separable. */
 static volatile UINT8 g_dimm_tested[MAX_DIMMS] = {0};
 
-/* v0.4.64 — interleave-aware attribution. The Path-B timing probe recovers AND
+/* v0.4.65 — interleave-aware attribution. The Path-B timing probe recovers AND
    confirms the Haswell DDR3 2ch/2DIMM address map; when valid we attribute an
    error to the EXACT (channel,DIMM) = SPD slot, not the BIOS Type-20 range
    (which is wrong under channel interleave). Validated on OptiPlex 9020:
@@ -1721,7 +1721,7 @@ static void record_error(kernel_id_t test, UINT32 core,
                 }
         }
     }
-    /* v0.4.64 — interleave-aware tally (exact SPD slot), parallel to the
+    /* v0.4.65 — interleave-aware tally (exact SPD slot), parallel to the
        Type-20 one above. Only when the probe confirmed the address map. */
     if (g_intl_valid) {
         int sl = addr_to_intl_slot(addr);
@@ -3109,15 +3109,15 @@ bf2_done:
    variant runs 30 sec of FMA chain (~10× longer) WITH interleaved memory
    writes, so the test hits VRM + IMC simultaneously. This is the closest
    pre-OS analogue to Prime95 Small FFT thermal stress. */
-/* v0.4.64 — DIAG: immediate post-fill check for the AVX2 Sustained kernel (the
+/* v0.4.65 — DIAG: immediate post-fill check for the AVX2 Sustained kernel (the
    one that actually reports the byte-1 errors — earlier diag was wrongly placed
    in run_avx2). Localizes WHEN byte 1 goes wrong: at the AVX2 store itself, or
    during the FMA/verify window after it. */
 static volatile UINT64 g_avx_imm_mismatch = 0;
 static volatile int    g_avx_imm_have_sample = 0;
 static UINT64 g_avx_imm_addr = 0, g_avx_imm_exp = 0, g_avx_imm_act = 0;
-static UINT64 g_avx_imm_flush = 0;   /* v0.4.64 — DRAM re-read of the first post-store mismatch */
-static volatile UINT64 g_avx_scalar_mismatch = 0;  /* v0.4.64 — scalar-fill control */
+static UINT64 g_avx_imm_flush = 0;   /* v0.4.65 — DRAM re-read of the first post-store mismatch */
+static volatile UINT64 g_avx_scalar_mismatch = 0;  /* v0.4.65 — scalar-fill control */
 
 static void run_avx2_sustained(ap_arg_t *a) {
     if (!g_has_avx2) {
@@ -3164,7 +3164,7 @@ static void run_avx2_sustained(ap_arg_t *a) {
             : "ymm0", "memory", "cc");
         a->bytes += (UINT64)n * 8;
 
-        /* v0.4.64 — DIAG: verify the fill IMMEDIATELY, before the FMA burst,
+        /* v0.4.65 — DIAG: verify the fill IMMEDIATELY, before the FMA burst,
            on the first iteration only. Mismatch HERE = the AVX2 256-bit store
            itself wrote wrong byte 1; clean here but dirty at the post-FMA
            verify = it goes wrong during the FMA/verify window. */
@@ -3185,7 +3185,7 @@ static void run_avx2_sustained(ap_arg_t *a) {
                             g_avx_imm_have_sample = 1;
                         }
                     }
-            /* v0.4.64 — CONTROL: same buffer, PLAIN scalar 64-bit stores, then
+            /* v0.4.65 — CONTROL: same buffer, PLAIN scalar 64-bit stores, then
                immediate re-verify. AVX2 dirty + scalar clean => the 256-bit
                store path is at fault, not the DRAM cells. */
             for (UINTN iv = 0; iv < n; iv++) a->base[iv] = pat[iv & 3];
@@ -5701,7 +5701,7 @@ static void timing_probe_calibrate(void) {
     uefi_call_wrapper(BS->FreePages, 2, addr, pages);
 }
 
-/* v0.4.64 — Path B step-2: recover DRAM addressing functions from the row-
+/* v0.4.65 — Path B step-2: recover DRAM addressing functions from the row-
    conflict timing channel (DRAMA solver). Groups random addresses into
    "same-bank" sets (mutual row conflict), then brute-forces linear XOR
    functions of address bits that are CONSTANT within every set but VARY across
@@ -5710,7 +5710,7 @@ static void timing_probe_calibrate(void) {
    (which fn = DIMM) come next, anchored by a7=channel + the physical layout. */
 #define FN_POOL   512
 #define FN_BIT_LO 6
-#define FN_BIT_HI 34   /* v0.4.64 — up to a34: block/channel select on a 16 GB box is a32/a33 */
+#define FN_BIT_HI 34   /* v0.4.65 — up to a34: block/channel select on a 16 GB box is a32/a33 */
 static UINT64 g_fn_pool[FN_POOL];
 static UINT8  g_fn_setid[FN_POOL];
 static int    g_fn_nsets = 0;
@@ -5732,7 +5732,7 @@ static int fn_is_addr_func(UINT64 m) {
 static void timing_probe_recover(void) {
     CHAR16 lb[200];
     if (!g_has_clflush) { log_line(L"[FUNC] no CLFLUSH — skipped"); return; }
-    /* v0.4.64 — sample across ALL physical RAM (every 4 GB block), not one low
+    /* v0.4.65 — sample across ALL physical RAM (every 4 GB block), not one low
        512 MB buffer, so the channel/DIMM-select functions (block boundaries
        a32/a33 on a 16 GB box) become visible — not just intra-DIMM bank bits.
        Read-only: clflush + load timing on free conventional memory. */
@@ -5815,7 +5815,7 @@ static void timing_probe_recover(void) {
                 SPrint(lb, sizeof(lb), L"[FUNC] fn: a%d ^ a%d", a, b); log_line(lb); found++;
             }
     if (!found) log_line(L"[FUNC] no constant XOR funcs (1-2 bit) — sets noisy / threshold off");
-    /* v0.4.64 — test DRAMA Table-2a Haswell DDR3 candidates + block hypotheses
+    /* v0.4.65 — test DRAMA Table-2a Haswell DDR3 candidates + block hypotheses
        EXPLICITLY (the channel hash is a 7-bit XOR, invisible to 1-2 bit brute). */
     struct { UINT64 m; const CHAR16 *nm; } cand[] = {
         { (1ULL<<7)|(1ULL<<8)|(1ULL<<9)|(1ULL<<12)|(1ULL<<13)|(1ULL<<18)|(1ULL<<19), L"channel(intl 7b)" },
@@ -5829,17 +5829,31 @@ static void timing_probe_recover(void) {
                fn_is_addr_func(cand[ci].m) ? (CHAR8*)"YES" : (CHAR8*)"no");
         log_line(lb);
     }
-    /* v0.4.64 — if the published Haswell channel hash AND the a16 DIMM bit both
-       check out on THIS board, lock them in as the attribution map. */
-    UINT64 chmask = (1ULL<<7)|(1ULL<<8)|(1ULL<<9)|(1ULL<<12)|(1ULL<<13)|(1ULL<<18)|(1ULL<<19);
-    if (fn_is_addr_func(chmask) && fn_is_addr_func(1ULL<<16)) {
-        g_intl_chan_mask = chmask;
-        g_intl_dimm_bit  = 16;
-        g_intl_valid     = 1;
-        log_line(L"[FUNC] interleave map CONFIRMED -> attribution by (channel,DIMM)=SPD slot");
-    } else {
-        log_line(L"[FUNC] interleave map NOT confirmed -> falling back to Type-20 ranges");
+    /* v0.4.65 — multi-platform address-map table. Each row is a published
+       (channel-hash, DIMM-in-channel-bit) pair; we accept the FIRST row whose
+       BOTH functions actually check out on THIS board (fn_is_addr_func tests
+       them against the live timing groups). A row that doesn't fit the silicon
+       simply won't confirm — so wrong rows never mis-attribute, they're just
+       skipped. Add new rows (Skylake/DDR4, AMD, …) once validated on that HW. */
+    static const struct { const CHAR16 *nm; UINT64 ch; int dbit; } g_addr_maps[] = {
+        { L"Intel DDR3 2ch/2DIMM (IvyBridge/Haswell)",
+          (1ULL<<7)|(1ULL<<8)|(1ULL<<9)|(1ULL<<12)|(1ULL<<13)|(1ULL<<18)|(1ULL<<19), 16 },
+        { L"Intel DDR3 2ch (SandyBridge)", (1ULL<<6), 16 },
+    };
+    g_intl_valid = 0;
+    for (UINTN mi = 0; mi < sizeof(g_addr_maps)/sizeof(g_addr_maps[0]); mi++) {
+        if (fn_is_addr_func(g_addr_maps[mi].ch) &&
+            fn_is_addr_func(1ULL << g_addr_maps[mi].dbit)) {
+            g_intl_chan_mask = g_addr_maps[mi].ch;
+            g_intl_dimm_bit  = g_addr_maps[mi].dbit;
+            g_intl_valid     = 1;
+            SPrint(lb, sizeof(lb), L"[FUNC] address map CONFIRMED: %s -> attribution by SPD slot", g_addr_maps[mi].nm);
+            log_line(lb);
+            break;
+        }
     }
+    if (!g_intl_valid)
+        log_line(L"[FUNC] no known address map fits this platform -> Type-20 fallback");
     for (int s = 0; s < 4 && s < g_fn_nsets; s++) {
         UINT64 amn = ~0ULL, amx = 0; int cnt = 0;
         for (int k = 0; k < FN_POOL; k++) if (g_fn_setid[k] == s) {
@@ -9369,7 +9383,7 @@ static void render_simple_verdict(UINT64 total_ms) {
         }
     } else { /* VERDICT_FAIL */
         int didx = dominant_dimm_idx();
-        /* v0.4.64 — confirmed interleave map is AUTHORITATIVE: override the
+        /* v0.4.65 — confirmed interleave map is AUTHORITATIVE: override the
            Type-20 guess with the exact (channel,DIMM)=SPD-slot attribution. */
         if (g_intl_valid && g_dimm_count >= 4) {
             UINT32 bn = 0; int bs = -1;
@@ -9706,8 +9720,8 @@ static void render_summary(UINT64 total_ms) {
     UINTN hrow = (g_hdr_h / 2 - g_char_h / 2) / g_char_h;
     CHAR16 buf[200];
     SPrint(buf, sizeof(buf),
-           T(L"  MEMFORGE v0.4.64 ИТОГИ   |   %d сек   |   Ядра %d/%d",
-             L"  MEMFORGE v0.4.64 SUMMARY   |   %d sec   |   Cores %d/%d"),
+           T(L"  MEMFORGE v0.4.65 ИТОГИ   |   %d сек   |   Ядра %d/%d",
+             L"  MEMFORGE v0.4.65 SUMMARY   |   %d sec   |   Cores %d/%d"),
            (UINT32)(total_ms / 1000),
            (UINT32)g_n_enabled, (UINT32)g_n_cores);
     say_at_rc(0, hrow, buf);
@@ -10231,7 +10245,7 @@ static void build_run_basename(CHAR16 *out, UINTN cap_chars) {
     UINT32 run_seq = g_hist_prev_valid ? (g_hist_prev.run_seq + 1) : 1;
     int di = (g_run_total_errors > 0) ? dominant_dimm_idx() : -1;
     if (di < 0 && g_dimm_count == 1) di = 0;
-    /* v0.4.64 — prefer the confirmed interleave attribution (exact SPD slot),
+    /* v0.4.65 — prefer the confirmed interleave attribution (exact SPD slot),
        same as the on-screen verdict, so the filename names the RIGHT stick. */
     if (g_intl_valid && g_dimm_count >= 4 && g_run_total_errors > 0) {
         UINT32 bn = 0; int bs = -1;
@@ -11855,7 +11869,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
         }
     }
 
-    log_line(L"=== MemForge2 v0.4.64 init ===");
+    log_line(L"=== MemForge2 v0.4.65 init ===");
     log_line(L"[WATCHDOG] UEFI 5-min watchdog disabled at app entry");
     flush_early_log();   /* v0.4.52 — emit lines buffered before the log opened */
     /* Show splash IMMEDIATELY so the user sees the program is alive while
@@ -11982,7 +11996,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
        address->slot decode; for now logs MAD topology + cross-checks SMBIOS. */
     imc_dump();
     timing_probe_calibrate();   /* v0.4.54 — Path B step-1: validate row-conflict timing channel */
-    timing_probe_recover();     /* v0.4.64 — Path B step-2: recover DRAM addressing functions */
+    timing_probe_recover();     /* v0.4.65 — Path B step-2: recover DRAM addressing functions */
     /* Once total RAM is known: scale buffer-chunk size for big-RAM systems
        so the pass count stays reasonable. Skipped if user pinned BufferMB
        in quantai.ini. */
@@ -12299,7 +12313,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
         g_pass_durations_count = 0;
         g_core_stall_count = 0;   /* v0.4.47 — clear stall tally for fresh run */
         g_err_count = 0;          /* v0.4.47 — fresh error tally each run */
-        g_avx_imm_mismatch = 0; g_avx_imm_have_sample = 0;  /* v0.4.64 diag */
+        g_avx_imm_mismatch = 0; g_avx_imm_have_sample = 0;  /* v0.4.65 diag */
         for (UINTN d = 0; d < MAX_DIMMS; d++) g_dimm_err_count[d] = 0;
         for (UINTN d = 0; d < MAX_DIMMS; d++) g_dimm_tested[d] = 0;   /* v0.4.47 — fresh per-run */
         for (UINTN i = 0; i < g_n_enabled; i++) {
@@ -12723,7 +12737,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
                            L"corruption appears AFTER the fill (FMA/verify window)");
                 log_line(db);
             }
-            /* v0.4.64 — interleave-aware verdict: name the bad stick by SERIAL
+            /* v0.4.65 — interleave-aware verdict: name the bad stick by SERIAL
                via the confirmed (channel,DIMM) map, not the wrong Type-20 range. */
             if (g_intl_valid && g_dimm_count >= 4) {
                 int bs = -1; UINT32 bn = 0;
