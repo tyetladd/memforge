@@ -1,5 +1,7 @@
 # MemForge2
 
+**Latest release: [v0.4.65](https://github.com/Paradoxdov/memforge/releases/latest)** — download `MemForge2.efi`, copy to `EFI/BOOT/loader.efi` on a FAT32 USB.
+
 UEFI memory diagnostic tool for shop / repair use. Boots from USB before any
 OS loads, runs 14 stress and pattern tests in parallel on every CPU core,
 captures hardware ECC events via MCA registers, snapshots environmental
@@ -17,6 +19,13 @@ DDR3 modules.) The simple verdict screen (shown above) is the default after
 every run; press **[D]** for the technical breakdown — full 14-test table,
 per-error address/DIMM/DRAM-coord records, MCA bank diff, SPD timings, and
 BW degradation trend.*
+
+## Project status
+
+This is a side project I maintain alongside my main job (PC assembly /
+repair). Issues are addressed as my schedule allows, usually on weekends
+— weekdays leave very little time. Critical bugs (data corruption, system
+hangs) take priority over feature requests. Thanks for your patience.
 
 ## What it actually does
 
@@ -107,6 +116,49 @@ BW degradation trend.*
   3. Stuck-bit detection via XOR-mask repetition
   4. Stuck-row / stuck-bank detection via DRAM-coord heuristic
   5. 1-GB histogram of error addresses
+
+  **Honest scope of (1)**: SMBIOS Type 20 maps each physical address to
+  the slot the firmware says owns it. On servers / NUMA / single-channel
+  / non-interleaved consumer setups this gives the exact bad DIMM. On a
+  typical dual-channel desktop the iMC interleaves addresses between the
+  channel pair, so a single bad chip on ONE stick can appear as errors
+  distributed across both sticks. Since v0.4.21 the verdict distinguishes
+  the two cases by checking whether the BIOS-reported address ranges
+  overlap (real interleave) or are disjoint (block mode); on block-mapped
+  systems "ZAMENIT' OBE" is the honest verdict, on real interleave it's
+  "ZAMENIT' ODNU iz pary". Since v0.4.25, when verdict can't be sure
+  which of a pair is at fault, the program automatically re-tests each
+  DIMM in isolation (~5 min) and produces a definitive `REPLACE X`
+  answer — no manual swapping required on most consumer desktops.
+
+  **New in v0.4.61+ — hardware-timing address decode (Haswell DDR3)**: on
+  Intel client platforms where channel interleave defeats SMBIOS Type 20,
+  the program recovers the DRAM address-mapping functions directly from a
+  row-conflict timing side-channel (à la Pessl et al. "DRAMA"), confirms
+  them against the published Haswell map, and attributes each error to the
+  exact (channel, DIMM) = SPD slot. The verdict then names the faulty stick
+  by its SPD serial number — and follows it correctly even when the stick is
+  moved to a different slot. Validated against a known-bad module across
+  slot swaps on OptiPlex 9020/7020.
+
+  **Coverage of exact (serial + slot) identification** — the address map is
+  matched from a self-validating table, so a row that doesn't fit the silicon
+  is skipped and the tool never mis-attributes:
+
+  | Platform | Exact bad-stick ID |
+  |----------|--------------------|
+  | Intel **DDR3, dual-channel** — Sandy Bridge / Ivy Bridge / Haswell (OptiPlex 3010/7010/9010/3020/7020/9020 and kin) | ✓ recovered & validated |
+  | DDR4 / DDR5 / Skylake and newer / AMD | ↩ safe fallback to SMBIOS Type-20 (old behaviour — honest, but no exact slot) |
+
+  Fallback is never wrong, just less precise; new platforms are added as one
+  table row once validated against a known-bad module on that hardware.
+- **Auto-isolation** — when the post-test verdict finds errors spread
+  across multiple DIMM address ranges, the program automatically re-runs
+  the failing kernel against each affected stick in turn (constraining
+  the test buffer to that DIMM's SMBIOS Type 20 range). Final screen
+  reads e.g. "DDR4-A2: 0 errors / DDR4-B2: 8 errors → REPLACE DDR4-B2,
+  HIGH confidence (confirmed by isolation)". No user input required;
+  takes ~5 min on top of the main run.
 - **Marathon mode** — `MarathonHours=N` (1-24) keeps cycling tests for N
   hours. Multipass iterator wraps when RAM coverage cycle completes, so
   every cycle covers fresh (region, offset) pairs. Catches the
@@ -141,8 +193,12 @@ After the test, on the USB next to `loader.efi`:
   per-stride MB/s, SMBus signal integrity.
 - `report.json` — structured data including everything above. Each error
   record carries `at: {t_ms, temp_c, pkg_w, throttle, vid_mv}` for
-  context-aware AI analysis. Plain JSON, easy to feed into any downstream
-  tool.
+  context-aware AI analysis. A top-level `peaks` block (added v0.4.28)
+  reports run-wide max temperature, peak package power, max frequency
+  reached, peak/theoretical bandwidth, throttle event count, and which
+  mechanism actually lifted the CPU to turbo (HWP vs legacy PERF_CTL vs
+  AMD CPPC2) so an automated analyzer can verify the CPU was genuinely
+  loaded. Plain JSON, easy to feed into any downstream tool.
 
 ## Building
 
@@ -175,9 +231,10 @@ EnableAVX=1
 ;BitFadeEveryPass=0 ; only on pass 1 by default
 ;TestOnlyDimm=0     ; 1..N = isolate to that DIMM slot
 ;MarathonHours=0    ; 0 = off, 1..24 = run for N hours
+;WatchdogSeconds=120 ; auto-reboot if a core wedges mid-test; 0 = off
 
 [Meta]
-Version=0.4.15
+Version=0.4.65
 Language=en         ; "ru" or "en"
 
 [Display]

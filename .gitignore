@@ -21,6 +21,11 @@ PreLoader.efi
 QuantAI.efi
 NvVars
 
+# --- Archived field logs (user hardware logs Claude saves for analysis) ---
+# Never goes to the public repo: contains user machine/BIOS/serial details
+# and is diagnostic working data, not source.
+field-logs/
+
 # --- Test logs and qemu state ---
 memforge2.log
 qemu_run.log
@@ -68,3 +73,9 @@ docs/habr-article*.md
 *.local.md
 *.local.txt
 DEVLOG.local.md
+
+# linewatch state — per-session snapshot, never goes to git
+.linewatch-state
+
+# Internal working agreement — keep local, never publish
+CLAUDE.md

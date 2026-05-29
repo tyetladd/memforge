@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# commit-msg hook — enforces linewatch discipline on the MemForge2 repo.
+#
+# Blocks any commit that touches a tracked source file
+# (MemForge2.src.c, README.md, quantai.ini) UNLESS:
+#   1. tools/linewatch.sh check passes (actual line delta matches plan)
+#   2. the commit message contains a "linewatch:" trailer line
+#
+# Commits that don't touch tracked files pass through unchanged.
+# To bypass for an emergency hotfix:  git commit --no-verify
+# (but --no-verify will be visible in the Bash command history, so it's
+# not silent — the project owner sees it).
+
+MSG_FILE="$1"
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+TRACK_FILES=("MemForge2.src.c" "README.md" "quantai.ini")
+
+# Are any tracked files in the staged commit?
+touched=0
+for f in "${TRACK_FILES[@]}"; do
+    if ! git diff --cached --quiet -- "$f" 2>/dev/null; then
+        touched=1
+        break
+    fi
+done
+
+if [ "$touched" = "0" ]; then
+    exit 0    # no tracked files touched, allow commit
+fi
+
+# Tracked file is in commit — enforce linewatch.
+
+# 1. linewatch check must pass
+if [ ! -x "$REPO_ROOT/tools/linewatch.sh" ]; then
+    echo "" >&2
+    echo "ABORT: tools/linewatch.sh missing or not executable." >&2
+    echo "Run: chmod +x tools/linewatch.sh" >&2
+    exit 1
+fi
+
+if ! "$REPO_ROOT/tools/linewatch.sh" check >&2; then
+    echo "" >&2
+    echo "=============================================================" >&2
+    echo "ABORT: commit blocked — linewatch check failed." >&2
+    echo "" >&2
+    echo "The actual line delta does NOT match what was planned." >&2
+    echo "Either:" >&2
+    echo "  * re-plan via tools/linewatch.sh plan-edit (exact counts)" >&2
+    echo "  * revert the over-aggressive Edit: git checkout <file>" >&2
+    echo "  * bypass explicitly:  git commit --no-verify" >&2
+    echo "=============================================================" >&2
+    exit 1
+fi
+
+# 2. commit message must contain a 'linewatch:' trailer line
+if ! grep -q '^linewatch:' "$MSG_FILE"; then
+    echo "" >&2
+    echo "=============================================================" >&2
+    echo "ABORT: commit message missing 'linewatch:' trailer line." >&2
+    echo "" >&2
+    echo "Add a line like:" >&2
+    echo "    linewatch: MemForge2.src.c +N -M (planned +N -M) [OK]" >&2
+    echo "" >&2
+    echo "near the bottom of the commit message body. This is the" >&2
+    echo "audit trail visible to the project owner via git log — they" >&2
+    echo "cannot see Claude's intermediate tool calls in their UI." >&2
+    echo "" >&2
+    echo "Bypass:  git commit --no-verify" >&2
+    echo "=============================================================" >&2
+    exit 1
+fi
+
+exit 0
